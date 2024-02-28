@@ -1,6 +1,6 @@
 from ionpy import Node, Builder, Buffer, PortMap, Port, Param, Type, TypeCode
 import numpy as np
-from  gendc_python.gendc_separator import descriptor as gendc
+import gendc_separator.descriptor as gendc
 
 import datetime
 import argparse
@@ -28,6 +28,10 @@ def set_commandline_options():
     parser = argparse.ArgumentParser(description="Performance test for your U3V Camera")
     parser.add_argument('-d', '--directory', default='.', type=str, \
                         help='Directory to save log')
+    parser.add_argument('-g', '--gain-key-name', default='Gain',type=str, \
+                         help='Name of Gain key defined for GenICam feature')
+    parser.add_argument('-e', '--exposuretime-key-name', default='ExposureTime', type=str, \
+                        help='Name of ExposureTime key defined for GenICam feature')
     parser.add_argument('-nd', '--number-of-device', default=1, type=int, \
                         help='The number of devices')
     parser.add_argument('-nf', '--number-of-frames', default=100, type=int, \
@@ -70,6 +74,8 @@ def get_device_info(parser):
     test_info["Number of Tests"] = args.number_of_tests
     test_info["Realtime-display mode"] = args.realtime_display_mode
 
+    dev_info["Gain Key"] = args.gain_key_name
+    dev_info["ExposureTime Key"] = args.exposuretime_key_name
     dev_info["Number of Devices"] = args.number_of_device
 
     if not os.path.isdir(test_info["Output Directory"]):
@@ -103,6 +109,11 @@ def get_device_info(parser):
     dev_info["Height"] = device.get_integer_feature_value("Height")
     dev_info["PayloadSize"] = device.get_integer_feature_value("PayloadSize")
     dev_info["PixelFormat"] = device.get_string_feature_value("PixelFormat")
+
+    for k in ["Gain Key", "ExposureTime Key"]:
+        if not device.is_feature_available(dev_info[k]):
+            parser.print_help(sys.stderr)
+            raise Exception("{0} is an invalid feature key to access {1}".format(dev_info[k], k))
         
     del device
     Aravis.shutdown()
@@ -141,47 +152,92 @@ def process_and_save(dev_info, test_info, output_directory_path, last_run):
     builder.set_target('host')
     builder.with_bb_module(module_name)
 
+    # input port for the first BB ##############################################
+    dispose_device = Port('dispose_device', Type(TypeCode.Uint, 1, 1), 0)
+    gain_p = Port('gain', Type(TypeCode.Float, 64, 1), 1)
+    exposuretime_p = Port('exposuretime', Type(TypeCode.Float, 64, 1), 1)
+
+    # input port for the second BB #############################################
+    dispose_writer = Port('dispose_writer', Type(TypeCode.Uint, 1, 1), 0)
+    # if gendc
+    payloadsize_p = Port('payloadsize', Type(TypeCode.Int, 32, 1), 0)
+    # else
+    wp = Port('width', Type(TypeCode.Int, 32, 1), 0)
+    hp = Port('height', Type(TypeCode.Int, 32, 1), 0)
+    color_channel_p = Port('color_channel', Type(TypeCode.Int, 32, 1), 0)
+
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
+    pixel_format_ptr = Param('pixel_format_ptr', dev_info["PixelFormat"])
     frame_sync = Param('frame_sync', 'true')
     realtime_diaplay_mode = Param('realtime_diaplay_mode', test_info["Realtime-display mode"])
+    gain_key = Param('gain_key', dev_info["Gain Key"])
+    exposure_key = Param('exposure_key', dev_info["ExposureTime Key"])
 
     node = builder.add(get_bb_for_obtain_image(dev_info["PixelFormat"]))\
-        .set_param([num_devices, frame_sync, realtime_diaplay_mode, ])
+        .set_port([dispose_device, gain_p, exposuretime_p, ])\
+        .set_param([num_devices, pixel_format_ptr, frame_sync, gain_key, exposure_key, realtime_diaplay_mode, ])
+        
+    # portmap
+    port_map = PortMap()
+
+    # input values
+    gain_data = np.array([48.0] * dev_info["Number of Devices"])
+    exposure_data = np.array([100.0] * dev_info["Number of Devices"])
+
+    gains = Buffer(Type(TypeCode.Float, 64, 1), (dev_info["Number of Devices"],))
+    exposures = Buffer(Type(TypeCode.Float, 64, 1), (dev_info["Number of Devices"],))
+    gains.write(gain_data.tobytes(order='C'))
+    exposures.write(exposure_data.tobytes(order='C'))
     
-    output_p = node.get_port('output')
-    frame_count_p = node.get_port('frame_count')
+    port_map.set_buffer(gain_p, gains)
+    port_map.set_buffer(exposuretime_p, exposures)
 
     # output values
+    outputs = []
     data_type = np.uint8 if dev_info["PixelFormat"] == "Mono8" or dev_info["PixelFormat"] == "RGB8" \
         else np.uint16 if dev_info["PixelFormat"] == "Mono10" or dev_info["PixelFormat"] == "Mono12" \
         else np.uint8
-    
-    outputs = []
-    output_datas = []
-    output_size = (dev_info["Height"], dev_info["Width"], )
+    depth_of_buffer = np.iinfo(data_type).bits
+    output_size = (dev_info["Width"], dev_info["Height"], )
     if dev_info["PixelFormat"] == "RGB8":
         output_size += (3,)
     for i in range(dev_info["Number of Devices"]):
-        output_datas.append(np.full(output_size, fill_value=0, dtype=data_type))
-        outputs.append(Buffer(array= output_datas[i]))
+        outputs.append(Buffer(Type(TypeCode.Uint, depth_of_buffer, 1), output_size))
 
-    fcdatas = []
-    
+    framecount = Buffer(Type(TypeCode.Uint, 32, 1), (dev_info["Number of Devices"], ))
 
-    fcdatas = np.full((dev_info["Number of Devices"]), fill_value=0, dtype=np.uint32)
-    frame_counts = Buffer(array=fcdatas)
+    port_map.set_buffer_array(node.get_port('output'), outputs)
+    port_map.set_buffer(node.get_port('frame_count'), framecount)
 
-    for i in range(dev_info["Number of Devices"]):
-        output_p[i].bind(outputs[i])
-    frame_count_p.bind(frame_counts)
+    #opencv 
+    buf_size_opencv = (dev_info["Height"], dev_info["Width"])
+
+    buffersize = dev_info["Height"] * dev_info["Width"]
+    if dev_info["PixelFormat"] == "Mono10" or dev_info["PixelFormat"] == "Mono12":
+        buffersize *= 2
 
 
     for x in range(test_info["Number of Frames"]):
-        builder.run()
+        port_map.set_u1(dispose_device, last_run and x == test_info["Number of Frames"] - 1)
+
+        # running the builder
+        builder.run(port_map)
 
         for nd in range(dev_info["Number of Devices"]):
-            framecount_record[nd].append(fcdatas[nd])
+            output_bytes = outputs[nd].read(buffersize) 
+            output_np_HxW = np.frombuffer(output_bytes, np.uint8).reshape(buf_size_opencv) if dev_info["PixelFormat"] == "Mono8" \
+                else np.frombuffer(output_bytes, np.uint16).reshape(buf_size_opencv)
+            cv2.imshow("image"+str(nd), output_np_HxW)
+        cv2.waitKey(1)
+        size_of_framecount = 4 * dev_info["Number of Devices"]
+
+        for nd in range(dev_info["Number of Devices"]):
+            start = 0 + nd * 4
+            framecount_record[nd].append(int.from_bytes(framecount.read(size_of_framecount)[start:start+4], 'little'))
+
+    if last_run:
+        port_map.set_u1(dispose_device, True)
 
     return framecount_record
 

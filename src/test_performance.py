@@ -1,6 +1,6 @@
 from ionpy import Node, Builder, Buffer, PortMap, Port, Param, Type, TypeCode
 import numpy as np
-from  gendc_python.gendc_separator import descriptor as gendc
+import gendc_separator.descriptor as gendc
 
 import datetime
 import argparse
@@ -26,6 +26,10 @@ def set_commandline_options():
     parser = argparse.ArgumentParser(description="Performance test for your U3V Camera")
     parser.add_argument('-d', '--directory', default='.', type=str, \
                         help='Directory to save log')
+    parser.add_argument('-g', '--gain-key-name', default='Gain',type=str, \
+                         help='Name of Gain key defined for GenICam feature')
+    parser.add_argument('-e', '--exposuretime-key-name', default='ExposureTime', type=str, \
+                        help='Name of ExposureTime key defined for GenICam feature')
     parser.add_argument('-nd', '--number-of-device', default=1, type=int, \
                         help='The number of devices')
     parser.add_argument('-nf', '--number-of-frames', default=100, type=int, \
@@ -68,6 +72,8 @@ def get_device_info(parser):
     test_info["Number of Tests"] = args.number_of_tests
     test_info["Realtime-display mode"] = args.realtime_display_mode
 
+    dev_info["Gain Key"] = args.gain_key_name
+    dev_info["ExposureTime Key"] = args.exposuretime_key_name
     dev_info["Number of Devices"] = args.number_of_device
 
     if not os.path.isdir(test_info["Output Directory"]):
@@ -101,6 +107,11 @@ def get_device_info(parser):
     dev_info["Height"] = device.get_integer_feature_value("Height")
     dev_info["PayloadSize"] = device.get_integer_feature_value("PayloadSize")
     dev_info["PixelFormat"] = device.get_string_feature_value("PixelFormat")
+
+    for k in ["Gain Key", "ExposureTime Key"]:
+        if not device.is_feature_available(dev_info[k]):
+            parser.print_help(sys.stderr)
+            raise Exception("{0} is an invalid feature key to access {1}".format(dev_info[k], k))
         
     del device
     Aravis.shutdown()
@@ -146,56 +157,77 @@ def process_and_save(dev_info, test_info, output_directory_path, last_run):
     builder.set_target('host')
     builder.with_bb_module(module_name)
 
+    # input port for the first BB ##############################################
+    dispose_device = Port('dispose_device', Type(TypeCode.Uint, 1, 1), 0)
+    gain_p = Port('gain', Type(TypeCode.Float, 64, 1), 1)
+    exposuretime_p = Port('exposuretime', Type(TypeCode.Float, 64, 1), 1)
+
     # input port for the second BB #############################################
+    dispose_writer = Port('dispose_writer', Type(TypeCode.Uint, 1, 1), 0)
     # if gendc
     payloadsize_p = Port('payloadsize', Type(TypeCode.Int, 32, 1), 0)
     # else
     wp = Port('width', Type(TypeCode.Int, 32, 1), 0)
     hp = Port('height', Type(TypeCode.Int, 32, 1), 0)
-
-    gain_p = Port('gain', Type(TypeCode.Float, 64, 1), 1)
-    exposuretime_p = Port('exposure', Type(TypeCode.Float, 64, 1), 1)
+    color_channel_p = Port('color_channel', Type(TypeCode.Int, 32, 1), 0)
 
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
+    pixel_format_ptr = Param('pixel_format_ptr', dev_info["PixelFormat"])
     frame_sync = Param('frame_sync', 'true')
     realtime_diaplay_mode = Param('realtime_diaplay_mode', test_info["Realtime-display mode"])
-
+    gain_key = Param('gain_key', dev_info["Gain Key"])
+    exposure_key = Param('exposure_key', dev_info["ExposureTime Key"])
     output_directory = Param("output_directory", output_directory_path)
 
-    # the first BB
     node = builder.add(get_bb_for_obtain_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-        .set_param([num_devices, frame_sync, realtime_diaplay_mode, ])
+        .set_port([dispose_device, gain_p, exposuretime_p, ])\
+        .set_param([num_devices, pixel_format_ptr, frame_sync, gain_key, exposure_key, realtime_diaplay_mode, ])
         
-    # the second BB
     if dev_info["GenDCStreamingMode"]:
         node = builder.add("image_io_binary_gendc_saver")\
-            .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
-            .set_param([num_devices, output_directory, 
-                        Param('input_gendc.size', dev_info["Number of Devices"]),
-                        Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+            .set_port([node.get_port('gendc'), node.get_port('device_info'), dispose_writer, payloadsize_p, ])\
+            .set_param([num_devices, output_directory, ])
     else:
         node = builder.add('image_io_binarysaver')\
-            .set_iport([node.get_port('output'), \
-                        node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
-            .set_param([num_devices, output_directory, \
-                    Param('input_images.size', dev_info["Number of Devices"]), \
-                    Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+            .set_port([node.get_port('output'), \
+                        node.get_port('device_info'), node.get_port('frame_count'), dispose_writer, wp, hp, color_channel_p, ])\
+            .set_param([output_directory, num_devices ])
 
     terminator = node.get_port('output')
-   
-    if dev_info["GenDCStreamingMode"]:
-        payloadsize_p.bind(dev_info["PayloadSize"])
-    else:
-        wp.bind(dev_info["Width"])
-        hp.bind(dev_info["Height"])
 
-    # output values 
-    out = Buffer(Type(TypeCode.Int, 32, 1), ())
-    terminator.bind(out)
+    # portmap
+    port_map = PortMap()
+
+    # input values
+    gain_data = np.array([48.0] * dev_info["Number of Devices"])
+    exposure_data = np.array([100.0] * dev_info["Number of Devices"])
+
+    gains = Buffer(Type(TypeCode.Float, 64, 1), (dev_info["Number of Devices"],))
+    exposures = Buffer(Type(TypeCode.Float, 64, 1), (dev_info["Number of Devices"],))
+    gains.write(gain_data.tobytes(order='C'))
+    exposures.write(exposure_data.tobytes(order='C'))
+    
+    if dev_info["GenDCStreamingMode"]:
+        port_map.set_i32(payloadsize_p, dev_info["PayloadSize"])
+    else:
+        port_map.set_i32(wp, dev_info["Width"])
+        port_map.set_i32(hp, dev_info["Height"])
+    port_map.set_buffer(gain_p, gains)
+    port_map.set_buffer(exposuretime_p, exposures)
+
+    # output values
+    t = Type(TypeCode.Int, 32, 1)
+    out = Buffer(t, ())
+
+    port_map.set_buffer(terminator, out)
 
     for x in range(test_info["Number of Frames"]):
-        builder.run()
+        port_map.set_u1(dispose_device, last_run and x == test_info["Number of Frames"] - 1)
+        port_map.set_u1(dispose_writer, x == test_info["Number of Frames"] - 1)
+
+        # running the builder
+        builder.run(port_map)
 
 def open_and_check(output_directory):
     f = open(os.path.join(output_directory, "config.json"))
