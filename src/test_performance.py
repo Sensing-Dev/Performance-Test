@@ -121,6 +121,21 @@ def get_bb_for_obtain_image(gendc, pixelformat):
         return "image_io_u3v_cameraN_u8x2"
     elif pixelformat == "Mono10" or pixelformat == "Mono12":
         return "image_io_u3v_cameraN_u16x2"
+    elif pixelformat == "RGB8" or pixelformat == "BGR8":
+        return "image_io_u3v_cameraN_u8x3"
+    else:
+        raise Exception("Currently not supported")
+    
+def get_bb_for_save_image(gendc, pixelformat):
+    if gendc:
+        return 'image_io_binary_gendc_saver'
+
+    if pixelformat == "Mono8":
+        return "image_io_binarysaver_u8x2"
+    elif pixelformat == "Mono10" or pixelformat == "Mono12":
+        return "image_io_binarysaver_u16x2"
+    elif pixelformat == "RGB8" or pixelformat == "BGR8":
+        return "image_io_binarysaver_u8x3"
     else:
         raise Exception("Currently not supported")
 
@@ -153,9 +168,6 @@ def process_and_save(dev_info, test_info, output_directory_path, last_run):
     wp = Port('width', Type(TypeCode.Int, 32, 1), 0)
     hp = Port('height', Type(TypeCode.Int, 32, 1), 0)
 
-    gain_p = Port('gain', Type(TypeCode.Float, 64, 1), 1)
-    exposuretime_p = Port('exposure', Type(TypeCode.Float, 64, 1), 1)
-
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
     frame_sync = Param('frame_sync', 'true')
@@ -169,13 +181,13 @@ def process_and_save(dev_info, test_info, output_directory_path, last_run):
         
     # the second BB
     if dev_info["GenDCStreamingMode"]:
-        node = builder.add("image_io_binary_gendc_saver")\
+        node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
             .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
             .set_param([num_devices, output_directory, 
                         Param('input_gendc.size', dev_info["Number of Devices"]),
                         Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
     else:
-        node = builder.add('image_io_binarysaver')\
+        node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
             .set_iport([node.get_port('output'), \
                         node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
             .set_param([num_devices, output_directory, \
