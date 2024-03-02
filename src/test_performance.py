@@ -1,10 +1,8 @@
 from ionpy import Node, Builder, Buffer, PortMap, Port, Param, Type, TypeCode
-import numpy as np
 from  gendc_python.gendc_separator import descriptor as gendc
 
 import datetime
 import argparse
-import sys
 from pathlib import Path
 
 import os
@@ -34,7 +32,6 @@ def set_commandline_options():
                         help='The number of tests to perform in this script')
     parser.add_argument('-rt', '--realtime-display-mode', choices=["true", "false"], default='false', type=str, \
                         help='Switch image capture mode')
-
     return parser
 
 def log_write(logtype, msg):
@@ -46,15 +43,6 @@ def log_info_write(msg):
 
 def log_warning_write(msg):
     log_write("WARNING", msg)
-
-def is_realtime_display(userinput):
-    if not userinput:
-        return False
-    
-    if userinput.lower() == 'on':
-        return True
-    else:
-        False
 
 def get_device_info(parser):
     dev_info ={}
