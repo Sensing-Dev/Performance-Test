@@ -4,10 +4,8 @@ from  gendc_python.gendc_separator import descriptor as gendc
 
 import datetime
 import argparse
-import sys
 from pathlib import Path
 
-import cv2
 
 import os
 os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
@@ -16,13 +14,8 @@ import gi
 gi.require_version("Aravis", "0.8")
 from gi.repository import Aravis
 
-import struct
-
-import re
-import json
-
 log_display = True
-saving_directory_prefix = "U3V-performance-test-with-display-"
+saving_directory_prefix = "U3V-performance-test-without-saving-"
 
 def set_commandline_options():
     parser = argparse.ArgumentParser(description="Performance test for your U3V Camera")
@@ -48,15 +41,6 @@ def log_info_write(msg):
 
 def log_warning_write(msg):
     log_write("WARNING", msg)
-
-def is_realtime_display(userinput):
-    if not userinput:
-        return False
-    
-    if userinput.lower() == 'on':
-        return True
-    else:
-        False
 
 def get_device_info(parser):
     dev_info ={}
@@ -120,6 +104,8 @@ def get_bb_for_obtain_image(pixelformat):
         return "image_io_u3v_cameraN_u8x2"
     elif pixelformat == "Mono10" or pixelformat == "Mono12":
         return "image_io_u3v_cameraN_u16x2"
+    elif pixelformat == "RGB8" or pixelformat == "BGR8":
+        return "image_io_u3v_cameraN_u8x3"
     else:
         raise Exception("Currently not supported")
 
@@ -153,29 +139,25 @@ def process_and_save(dev_info, test_info, output_directory_path, last_run):
     frame_count_p = node.get_port('frame_count')
 
     # output values
-    data_type = np.uint8 if dev_info["PixelFormat"] == "Mono8" or dev_info["PixelFormat"] == "RGB8" \
+    data_type = np.uint8 if dev_info["PixelFormat"] == "Mono8" or dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8" \
         else np.uint16 if dev_info["PixelFormat"] == "Mono10" or dev_info["PixelFormat"] == "Mono12" \
         else np.uint8
     
     outputs = []
     output_datas = []
     output_size = (dev_info["Height"], dev_info["Width"], )
-    if dev_info["PixelFormat"] == "RGB8":
+    if dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8":
         output_size += (3,)
     for i in range(dev_info["Number of Devices"]):
         output_datas.append(np.full(output_size, fill_value=0, dtype=data_type))
         outputs.append(Buffer(array= output_datas[i]))
-
-    fcdatas = []
-    
-
+   
     fcdatas = np.full((dev_info["Number of Devices"]), fill_value=0, dtype=np.uint32)
     frame_counts = Buffer(array=fcdatas)
 
     for i in range(dev_info["Number of Devices"]):
         output_p[i].bind(outputs[i])
     frame_count_p.bind(frame_counts)
-
 
     for x in range(test_info["Number of Frames"]):
         builder.run()
