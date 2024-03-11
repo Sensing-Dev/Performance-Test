@@ -32,6 +32,8 @@ def set_commandline_options():
                         help='The number of tests to perform in this script')
     parser.add_argument('-rt', '--realtime-display-mode', choices=["true", "false"], default='false', type=str, \
                         help='Switch image capture mode')
+    parser.add_argument('-db', '--delete-bins', choices=["true", "false"], default='true', type=str, \
+                        help='Switch image capture mode')
     return parser
 
 def log_write(logtype, msg):
@@ -55,6 +57,7 @@ def get_device_info(parser):
     test_info["Number of Frames"] = args.number_of_frames
     test_info["Number of Tests"] = args.number_of_tests
     test_info["Realtime-display mode"] = args.realtime_display_mode
+    test_info["Delete Bin files"] = args.delete_bins
 
     dev_info["Number of Devices"] = args.number_of_device
 
@@ -289,7 +292,7 @@ def write_log(output_directory, WxH, delete_bin=True):
         ofs[ith_device].write(str((total_num_frame-num_dropped_frames[ith_device]) * 1.0 / total_num_frame) + '\n')
         ofs[ith_device].close()
 
-    if delete_bin:
+    if test_info["Delete Bin files"]:
         for i, bf in enumerate(bin_files):
             bin_file = os.path.join(output_directory, bf)
             os.remove(bin_file)
