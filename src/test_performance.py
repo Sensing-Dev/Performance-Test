@@ -1,3 +1,11 @@
+# without saving
+import numpy as np
+import ctypes
+
+# saving
+import struct
+
+# common
 from ionpy import Node, Builder, Buffer, PortMap, Port, Param, Type, TypeCode
 from  gendc_python.gendc_separator import descriptor as gendc
 
@@ -11,8 +19,6 @@ os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
 import gi
 gi.require_version("Aravis", "0.8")
 from gi.repository import Aravis
-
-import struct
 
 import re
 import json
@@ -30,10 +36,13 @@ def set_commandline_options():
                         help='The number of frames to obtain per test')
     parser.add_argument('-nt', '--number-of-tests', default=2, type=int, \
                         help='The number of tests to perform in this script')
-    parser.add_argument('-rt', '--realtime-display-mode', choices=["true", "false"], default='false', type=str, \
-                        help='Switch image capture mode')
-    parser.add_argument('-db', '--delete-bins', choices=["true", "false"], default='true', type=str, \
-                        help='Switch image capture mode')
+    
+    parser.add_argument('-rt', '--realtime-display-mode', \
+                        action='store_true', help='Image capture in Realtime-display mode. Default is False.')
+    parser.add_argument('-re', '--realtime-evaluation-mode', \
+                        action='store_true', help='Run performance test in Realtime-evaluation. Default is False.')
+    parser.add_argument('-db', '--delete-bins', \
+                        action='store_false', help='Delete bin files in --realtime-ecaluation-mode. Default is True.')
     return parser
 
 def log_write(logtype, msg):
@@ -58,7 +67,7 @@ def get_device_info(parser):
     test_info["Number of Tests"] = args.number_of_tests
     test_info["Realtime-display mode"] = args.realtime_display_mode
     test_info["Delete Bin files"] = args.delete_bins
-
+    test_info["Realtime-evaluation mode"] = args.realtime_evaluation_mode
     dev_info["Number of Devices"] = args.number_of_device
 
     if not os.path.isdir(test_info["Output Directory"]):
@@ -307,8 +316,12 @@ if __name__ == "__main__":
         ith_test_output_directory = os.path.join(test_info["Output Directory"], str(i))
         os.mkdir(ith_test_output_directory)
 
-        process_and_save(dev_info, test_info, ith_test_output_directory, i == test_info["Number of Tests"] - 1)
-        ret = write_log(ith_test_output_directory, (dev_info["Width"], dev_info["Height"]))
+        print(test_info["Realtime-evaluation mode"])
+
+        if not test_info["Realtime-evaluation mode"]:
+
+            process_and_save(dev_info, test_info, ith_test_output_directory, i == test_info["Number of Tests"] - 1)
+            ret = write_log(ith_test_output_directory, (dev_info["Width"], dev_info["Height"]))
     
 
     
