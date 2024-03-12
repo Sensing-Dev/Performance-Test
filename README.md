@@ -25,7 +25,7 @@ python test_performance.py
 各引数は以下をご確認ください。
 ```
 $ python src/test_performance.py
-usage: test_performance.py [-h] [-d DIRECTORY] [-g GAIN_KEY_NAME] [-e EXPOSURETIME_KEY_NAME] [-nd NUMBER_OF_DEVICE] [-nf NUMBER_OF_FRAMES] [-nt NUMBER_OF_TESTS] [-rt {true,false}]
+usage: test_performance.py [-h] [-d DIRECTORY] [-nd NUMBER_OF_DEVICE] [-nf NUMBER_OF_FRAMES] [-nt NUMBER_OF_TESTS] [-rt] [-re] [-db]
 
 Performance test for your U3V Camera
 
@@ -33,18 +33,17 @@ options:
   -h, --help            show this help message and exit
   -d DIRECTORY, --directory DIRECTORY
                         Directory to save log
-  -g GAIN_KEY_NAME, --gain-key-name GAIN_KEY_NAME
-                        Name of Gain key defined for GenICam feature
-  -e EXPOSURETIME_KEY_NAME, --exposuretime-key-name EXPOSURETIME_KEY_NAME
-                        Name of ExposureTime key defined for GenICam feature
   -nd NUMBER_OF_DEVICE, --number-of-device NUMBER_OF_DEVICE
                         The number of devices
   -nf NUMBER_OF_FRAMES, --number-of-frames NUMBER_OF_FRAMES
                         The number of frames to obtain per test
   -nt NUMBER_OF_TESTS, --number-of-tests NUMBER_OF_TESTS
                         The number of tests to perform in this script
-  -rt {true,false}, --realtime-display-mode {true,false}
-                        Switch image capture mode
+  -rt, --realtime-display-mode
+                        Image capture in Realtime-display mode.
+  -re, --realtime-evaluation-mode
+                        Run performance test in Realtime-evaluation.
+  -db, --delete-bins    Delete bin files in --realtime-ecaluation-mode.
 ```
 
 以下のような出力が表示されます。
