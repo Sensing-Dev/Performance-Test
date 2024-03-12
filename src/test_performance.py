@@ -185,7 +185,7 @@ def get_frame_size(ith_sensor_config):
         else 1
     return w * h * d * c
 
-def load_and_get_framecount(output_directory, delete_bins):
+def load_and_get_framecount(output_directory):
 
     log_status_write("Post recording Process... Framecount data is generated.")
 
@@ -205,19 +205,9 @@ def load_and_get_framecount(output_directory, delete_bins):
 
     for bf in bin_files:
         bin_file = os.path.join(output_directory, bf)
-        
-        # I tried to put open/read/close process in another scope but it does not work
-        # filecontent = open_bin_file(os.path.join(output_directory, bf))
-
 
         with open(bin_file, mode='rb') as ifs:
-            filecontent = ifs.read()
-
-        # # I tried open/read/close explictly instead of with but it does not close.
-        # ifs = open(bin_file, mode='rb')
-        # filecontent = ifs.read()
-        # ifs.close()
-        
+            filecontent = ifs.read()   
             cursor = 0
 
             while cursor < len(filecontent):
@@ -234,20 +224,11 @@ def load_and_get_framecount(output_directory, delete_bins):
                     except:
                         framecount_record[ith_device].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
                         cursor = cursor + 4 + framesize[ith_device]
-            # I was wondering if this cause error for each item in the list but it also showed the error only in the last file in the list
-            # if delete_bins:
-            #     os.remove(bin_file)
-
-    if delete_bins:
-        for i, bf in enumerate(bin_files):
-            bin_file = os.path.join(output_directory, bf)
-            os.remove(bin_file)
-
 
     return framecount_record
 
 
-def process_and_save(dev_info, test_info, output_directory_path, save_image):
+def process_and_save(dev_info, test_info, output_directory_path, eval_while_recording):
 
     # sys.exit(1)
 
@@ -270,45 +251,11 @@ def process_and_save(dev_info, test_info, output_directory_path, save_image):
     output_directory = Param("output_directory", output_directory_path)
 
     # the first BB: Obtain GenDC/images
-    node = builder.add(get_bb_for_obtain_image(save_image, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+    node = builder.add(get_bb_for_obtain_image(not eval_while_recording, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
         .set_param([num_devices, frame_sync, realtime_diaplay_mode, ])
     
     # the second BB: optional
-    if save_image:
-        if dev_info["GenDCStreamingMode"]:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
-                .set_param([num_devices, output_directory, 
-                            Param('input_gendc.size', dev_info["Number of Devices"]),
-                            Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
-        else:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('output'), \
-                            node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
-                .set_param([num_devices, output_directory, \
-                        Param('input_images.size', dev_info["Number of Devices"]), \
-                        Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
-
-        terminator = node.get_port('output')
-   
-        if dev_info["GenDCStreamingMode"]:
-            payloadsize_p.bind(dev_info["PayloadSize"])
-        else:
-            wp.bind(dev_info["Width"])
-            hp.bind(dev_info["Height"])
-
-        # output values 
-        out = Buffer(Type(TypeCode.Int, 32, 1), ())
-        terminator.bind(out)
-
-        log_status_write("Recording Process... Bin files are generated.")
-
-        for x in range(test_info["Number of Frames"]):
-            builder.run()
-
-        return load_and_get_framecount(output_directory_path, test_info["Delete Bin files"])
-
-    else:
+    if eval_while_recording:
         output_p = node.get_port('output')
         frame_count_p = node.get_port('frame_count')
         # output values
@@ -344,8 +291,39 @@ def process_and_save(dev_info, test_info, output_directory_path, save_image):
             for nd in range(dev_info["Number of Devices"]):
                 framecount_record[nd].append(fcdatas[nd])
         return framecount_record
+    else:
+        if dev_info["GenDCStreamingMode"]:
+            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
+                .set_param([num_devices, output_directory, 
+                            Param('input_gendc.size', dev_info["Number of Devices"]),
+                            Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+        else:
+            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                .set_iport([node.get_port('output'), \
+                            node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
+                .set_param([num_devices, output_directory, \
+                        Param('input_images.size', dev_info["Number of Devices"]), \
+                        Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
 
+        terminator = node.get_port('output')
+   
+        if dev_info["GenDCStreamingMode"]:
+            payloadsize_p.bind(dev_info["PayloadSize"])
+        else:
+            wp.bind(dev_info["Width"])
+            hp.bind(dev_info["Height"])
 
+        # output values 
+        out = Buffer(Type(TypeCode.Int, 32, 1), ())
+        terminator.bind(out)
+
+        log_status_write("Recording Process... Bin files are generated.")
+
+        for x in range(test_info["Number of Frames"]):
+            builder.run()
+
+        return load_and_get_framecount(output_directory_path)
 
 def write_log(output_directory, dev_info, framecount_record, last_run):
 
@@ -396,6 +374,13 @@ def write_log(output_directory, dev_info, framecount_record, last_run):
 
 
     return True
+
+def delete_bin_files(output_directory):
+    log_status_write("Post Recording Process... Deleting bin files.")
+    bin_files = [f for f in os.listdir(output_directory) if f.startswith("raw-") and f.endswith(".bin")]
+    for i, bf in enumerate(bin_files):
+        bin_file = os.path.join(output_directory, bf)
+        os.remove(bin_file)
             
 if __name__ == "__main__":
 
@@ -406,7 +391,9 @@ if __name__ == "__main__":
         ith_test_output_directory = os.path.join(test_info["Output Directory"], str(i))
         os.mkdir(ith_test_output_directory)
 
-        ret = process_and_save(dev_info, test_info, ith_test_output_directory, not test_info["Realtime-evaluation mode"])
+        ret = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
+        if test_info["Delete Bin files"]:
+            delete_bin_files(ith_test_output_directory)
         ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
 
     
