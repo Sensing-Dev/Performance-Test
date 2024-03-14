@@ -7,14 +7,26 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <algorithm>
+#include <regex>
 
 #include <filesystem>
 #include <iomanip>
 #include <ctime>
 
 #include <ion/ion.h>
+#include <fstream>
+#include <json/json.hpp>
+#include "gendc_separator/ContainerHeader.h"
+#include "gendc_separator/tools.h"
 
 #define LOG_DISPLAY true
+
+#define PFNC_Mono8 0x01080001
+#define PFNC_Mono10 0x01100003
+#define PFNC_Mono12 0x01100005
+#define PFNC_RGB8 0x02180014
+#define PFNC_BGR8 0x02180015
 
 void logWrite(std::string log_type, std::string msg){
     if(LOG_DISPLAY){
@@ -243,9 +255,86 @@ std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
     }
 }
 
+int get_frame_size(nlohmann::json ith_sensor_config){
+    int w = ith_sensor_config["width"];
+    int h = ith_sensor_config["height"];
+    int d = ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono10 || ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono12 ? 2 : 1;
+    int c = ith_sensor_config["pfnc_pixelformat"] == PFNC_RGB8 || ith_sensor_config["pfnc_pixelformat"] == PFNC_BGR8 ? 3 : 1;
+    return w * h * d * c;
+}
+
+const std::regex number_pattern(R"(\d+)");
+
+int extractNumber(const std::string& filename) {
+    std::smatch match;
+    std::regex_search(filename, match, number_pattern);
+    return std::stoi(match[0]);
+}
+
 void getFrameCountFromBin(std::string output_directory, std::map<int, std::vector<int>>& framecount_record){
     logStatus("Post recording Process... Framecount data is generated.");
 
+    std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path("config.json"));
+    nlohmann::json config = nlohmann::json::parse(f);
+
+    std::vector<std::string> bin_files;
+    for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+            bin_files.push_back(entry.path().filename().string());
+        }
+    }
+    std::sort(bin_files.begin(), bin_files.end(), [](const std::string& a, const std::string& b) {
+        return extractNumber(a) < extractNumber(b);
+    });
+
+    std::vector<int> frame_size;
+    for (int i = 0; i < config["num_device"]; ++i){
+        frame_size.push_back(get_frame_size(config["sensor"+std::to_string(i+1)]));
+    }
+
+    for (const auto& filename : bin_files){
+        std::filesystem::path jth_bin= std::filesystem::path(output_directory) / std::filesystem::path(filename);
+
+        if (!std::filesystem::exists(jth_bin)){
+            throw std::runtime_error(filename + " does not exist");
+        }
+
+        std::ifstream ifs(jth_bin, std::ios::binary);
+        if (!ifs.is_open()){
+            throw std::runtime_error("Failed to open " + filename);
+        }
+        
+        ifs.seekg(0, std::ios::end);
+        std::streampos filesize = ifs.tellg();
+        ifs.seekg(0, std::ios::beg);
+        char* filecontent = new char[filesize];
+
+        if (!ifs.read(filecontent, filesize)) {
+            delete[] filecontent;
+            throw std::runtime_error("Failed to open " + filename);
+        }
+
+        int cursor = 0;
+        if (isGenDC(filecontent)){
+            while(cursor < static_cast<int>(filesize)){
+                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+                    ContainerHeader gendc_descriptor= ContainerHeader(filecontent + cursor);
+                    std::tuple<int32_t, int32_t> data_comp_and_part = gendc_descriptor.getFirstAvailableDataOffset(true);
+                    int offset = gendc_descriptor.getOffsetFromTypeSpecific(std::get<0>(data_comp_and_part), std::get<1>(data_comp_and_part), 3, 0);
+                    framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor + offset));
+                    cursor += gendc_descriptor.getDescriptorSize();
+                }
+            }
+        }else{
+            while(cursor < static_cast<int>(filesize)){
+                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+                    framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor));
+                    cursor += 4 + frame_size[ith_device];
+                }
+            }
+        }
+        delete[] filecontent;
+    }
 }
 
 template<typename U>
@@ -323,7 +412,56 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
     }
 }
 
+void writeLog(std::string output_directory, DeviceInfo& device_info, std::map<int, std::vector<int>>& framecount_record){
+    logStatus("Post Recording Process... A log for frameskip will be generated.");
+    logInfo("log written in");
 
+    std::vector<std::filesystem::path> logfile;
+    std::vector<std::ofstream> ofs;
+
+    for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
+        logfile.push_back(std::filesystem::path(output_directory) / std::filesystem::path("camera-"+std::to_string(ith_device)+"-frame_log.txt"));
+        ofs.push_back(std::ofstream(logfile[ith_device], std::ios::out));
+        ofs[ith_device] << device_info.getWidth() << "x" << device_info.getHeight() << "\n";
+        std::cout << "\t" << logfile[ith_device] << std::endl;
+    }
+
+    for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
+        int num_dropped_frames = 0;
+        int current_frame = 0;
+        int offset_frame_count = 0;
+        int expected_frame_count = 0;
+
+        bool first_frame = true;
+        for (int fc : framecount_record[ith_device]){
+            if (first_frame){
+                offset_frame_count = fc;
+                expected_frame_count = fc;
+                ofs[ith_device] << "offset_frame_count: " << fc << "\n";
+            }
+
+            bool frame_drop_occured = fc != expected_frame_count;
+
+            if (frame_drop_occured){
+                while (expected_frame_count < fc){
+                    ofs[ith_device] << expected_frame_count << " : x\n";
+                    num_dropped_frames += 1;
+                    expected_frame_count += 1;
+                }
+            }
+
+            frame_drop_occured = false;
+            ofs[ith_device] << expected_frame_count << " : " << fc << "\n";
+            expected_frame_count += 1;
+
+            if (current_frame < fc){
+                current_frame = fc;
+            }
+        }
+        int total_num_frames = current_frame - offset_frame_count + 1;
+        std::cout << "\t" << (total_num_frames-num_dropped_frames) * 1.0 / total_num_frames << std::endl;
+    }
+}
 
 
 int main(int argc, char *argv[])
@@ -394,6 +532,7 @@ int main(int argc, char *argv[])
             // std::cout << ith_test_output_directory << std::endl;
             process_and_save<uint16_t>(device_info, test_info, ith_test_output_directory.u8string(), framecount_record);
         }
+        writeLog(ith_test_output_directory.u8string(), device_info, framecount_record);
         
     }
 

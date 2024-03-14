@@ -16,6 +16,8 @@ include_directories(${SENSING_DEV_DIR}/include/aravis-0.8)
 include_directories(${SENSING_DEV_DIR}/include/glib-2.0)
 include_directories(${SENSING_DEV_DIR}/include/glib-2.0/include)
 
+include_directories(src)
+
 # performance test
 set(PT src/test_performance.cpp)
 add_executable(test_performance ${PT})
