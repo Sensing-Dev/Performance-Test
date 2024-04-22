@@ -1,3 +1,18 @@
+/*
+
+g++ src/test_performance.cpp -o test_performance  \
+-I src/ \
+-I /opt/sensing-dev/include -I /opt/sensing-dev/include/aravis-0.8 \
+-I /opt/sensing-dev/include/opencv4 \
+-L /opt/sensing-dev/lib \
+-L /opt/sensing-dev/lib/x86_64-linux-gnu \
+-lHalide -lion-core -ldl -lpthread -lopencv_core \
+-lopencv_imgcodecs -lopencv_highgui -lopencv_imgproc \
+-laravis-0.8 -lgobject-2.0 \
+`pkg-config --cflags --libs glib-2.0`
+
+*/
+
 #include <exception>
 #include <iostream>
 #include "arv.h"
@@ -62,7 +77,7 @@ class UserOption {
     std::string description_;
 
     public:
-        UserOption(T value, std::vector<std::string>& keys, std::string description){
+        UserOption(T value, std::vector<std::string> keys, std::string description){
             value_ = value;
             keys_ = keys;
             description_ = description;
@@ -506,10 +521,18 @@ int main(int argc, char *argv[])
     }
     std::time_t now;
     std::time(&now);
+    std::stringstream ss;
+
+    #ifdef _MSC_VER
     std::tm tm;
     localtime_s(&tm, &now);
-    std::stringstream ss;
     ss << saving_directory_prefix << std::put_time(&tm, "%Y-%m-%d-%H-%M-%S");
+    #else
+    std::tm* tm = std::localtime(&now); 
+    ss << saving_directory_prefix << std::put_time(tm, "%Y-%m-%d-%H-%M-%S");
+    #endif
+    
+    
     std::filesystem::path saving_path = std::filesystem::path(directory.getValue()) / std::filesystem::path(ss.str());
     std::filesystem::create_directory(saving_path);
 

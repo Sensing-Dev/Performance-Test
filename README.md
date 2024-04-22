@@ -4,7 +4,19 @@
 
 [こちら](https://sensing-dev.github.io/doc/startup-guide/windows/index.html)よりSDKをインストールしてください。
 
-その後、pipで以下のモジュールをインストールしてください。
+## C++版
+
+レポジトリ内にあるCMakeLists.txtを使ってビルドをしてください。
+
+```
+cmake -G "Visual Studio 17 2022" -A x64 ../
+cmake --build . --config Release
+```
+
+
+## Python版
+以下のモジュールをインストールしてください。
+
 ```bash
 pip3 install -U pip
 pip3 install ion-python
@@ -16,7 +28,47 @@ pip3 install gendc-python==0.1.0
 pip3 install matplotlib
 ```
 
-### How to use
+## For Linux
+
+[こちら](https://sensing-dev.github.io/doc/next/startup-guide/linux/index.html)よりSDKをインストールし、以下の環境変数を設定してください。
+
+```bash
+export LD_LIBRARY_PATH=/opt/sensing-dev/lib:/opt/sensing-dev/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+export GI_TYPELIB_PATH=/opt/sensing-dev/lib/x86_64-linux-gnu/girepository-1.0:$GI_TYPELIB_PATH
+```
+
+## C++版
+
+以下のコマンドでコンパイルが可能です。
+
+```bash
+g++ src/test_performance.cpp -o test_performance  \
+-I src/ \
+-I /opt/sensing-dev/include -I /opt/sensing-dev/include/aravis-0.8 \
+-I /opt/sensing-dev/include/opencv4 \
+-L /opt/sensing-dev/lib \
+-L /opt/sensing-dev/lib/x86_64-linux-gnu \
+-lHalide -lion-core -ldl -lpthread -lopencv_core \
+-lopencv_imgcodecs -lopencv_highgui -lopencv_imgproc \
+-laravis-0.8 -lgobject-2.0 \
+`pkg-config --cflags --libs glib-2.0`
+```
+
+## Python版
+
+以下のモジュールをインストールしてください。
+```bash
+pip3 install -U pip
+pip3 install ion-python
+pip3 install gendc-python==0.1.0
+```
+
+もしフレームドロップがどこで起きているかをグラフにしたい場合はmatplotlibもインストールする必要があります。
+```bash
+pip3 install matplotlib
+```
+
+## How to use
 以下のpythonプログラムを実行してください。
 ```
 python test_performance.py
