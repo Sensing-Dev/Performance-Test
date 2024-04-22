@@ -62,7 +62,7 @@ class UserOption {
     std::string description_;
 
     public:
-        UserOption(T value, std::vector<std::string>& keys, std::string description){
+        UserOption(T value, std::vector<std::string> keys, std::string description){
             value_ = value;
             keys_ = keys;
             description_ = description;
@@ -507,7 +507,11 @@ int main(int argc, char *argv[])
     std::time_t now;
     std::time(&now);
     std::tm tm;
+    #ifdef _MSC_VER
     localtime_s(&tm, &now);
+    #else
+    &tm = std::localtime(&now);
+    #endif
     std::stringstream ss;
     ss << saving_directory_prefix << std::put_time(&tm, "%Y-%m-%d-%H-%M-%S");
     std::filesystem::path saving_path = std::filesystem::path(directory.getValue()) / std::filesystem::path(ss.str());
