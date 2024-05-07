@@ -22,11 +22,64 @@
 
 #define LOG_DISPLAY true
 
-#define PFNC_Mono8 0x01080001
-#define PFNC_Mono10 0x01100003
-#define PFNC_Mono12 0x01100005
-#define PFNC_RGB8 0x02180014
-#define PFNC_BGR8 0x02180015
+// The other PixelFormat values are https://www.emva.org/wp-content/uploads/GenICamPixelFormatValues.pdf
+#define Mono8 0x01080001
+#define Mono10 0x01100003
+#define Mono12 0x01100005
+#define RGB8 0x02180014
+#define BGR8 0x02180015
+#define BayerBG8 0x0108000B
+#define BayerBG10 0x0110000F
+#define BayerBG12 0x01100013
+
+int getPixelFormatInInt(std::string pixelformat){
+    if (pixelformat == "Mono8"){
+        return Mono8;
+    }else if (pixelformat == "Mono10"){
+        return Mono10;
+    }else if (pixelformat == "Mono12"){
+        return Mono12;
+    }else if (pixelformat == "RGB8"){
+        return RGB8;
+    }else if (pixelformat == "BGR8"){
+        return BGR8;
+    }else if (pixelformat == "BayerBG8"){
+        return BayerBG8;
+    }else if (pixelformat == "BayerBG10"){
+        return BayerBG10;
+    }else if (pixelformat == "BayerBG12"){
+        return BayerBG12;
+    }else{
+        throw std::runtime_error(pixelformat + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ");
+    }
+}
+
+int getByteDepth(int pfnc_pixelformat){
+    if (pfnc_pixelformat == Mono8 || pfnc_pixelformat == RGB8 || pfnc_pixelformat == BGR8 || pfnc_pixelformat == BayerBG8){
+        return 1;
+    }else if (pfnc_pixelformat == Mono10 || pfnc_pixelformat == Mono12 || pfnc_pixelformat == BayerBG10 || pfnc_pixelformat == BayerBG12){
+        return 2;
+    }else{
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::uppercase << pfnc_pixelformat << " is not supported as default in this tool.\nPlease update getByteDepth()";
+        std::string hexString = ss.str();
+        throw std::runtime_error(hexString);
+    }
+}
+
+int getNumChannel(int pfnc_pixelformat){
+    if (pfnc_pixelformat == Mono8 || pfnc_pixelformat == Mono10 || pfnc_pixelformat == Mono12 || 
+        pfnc_pixelformat == BayerBG8 || pfnc_pixelformat == BayerBG10 || pfnc_pixelformat == BayerBG12){
+        return 1;
+    }else if (pfnc_pixelformat == RGB8 || pfnc_pixelformat == BGR8){
+        return 3;
+    }else{
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::uppercase << pfnc_pixelformat << " is not supported as default in this tool.\nPlease update getNumChannel()";
+        std::string hexString = ss.str();
+        throw std::runtime_error(hexString);
+    }
+}
 
 void logWrite(std::string log_type, std::string msg){
     if(LOG_DISPLAY){
@@ -140,7 +193,7 @@ class DeviceInfo {
 
             if (arv_device_is_feature_available(device, "GenDCDescriptor", &error)
                 && arv_device_is_feature_available(device, "GenDCStreamingMode", &error)
-                && arv_device_get_string_feature_value(device, "GenDCStreamingMode", &error) == "On"
+                && std::strcmp(arv_device_get_string_feature_value(device, "GenDCStreamingMode", &error), "On") == 0
             ){
                 gendc_streaming_mode_ = true;
             }
@@ -244,9 +297,11 @@ std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
         return "image_io_u3v_gendc";
     }
 
-    if (pixel_format == "Mono8"){
+    if (pixel_format == "Mono8" || pixel_format == "BayerBG8" || pixel_format == "BayerRG8"){
         return "image_io_u3v_cameraN_u8x2";
-    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"){
+    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"
+        || pixel_format == "BayerRG10" || pixel_format == "BayerRG12"
+        || pixel_format == "BayerBG10" || pixel_format == "BayerBG12"){
         return "image_io_u3v_cameraN_u16x2";
     } else if (pixel_format == "RGB8" || pixel_format == "BGR8"){
         return "image_io_u3v_cameraN_u8x3";
@@ -255,11 +310,29 @@ std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
     }
 }
 
+std::string getBinarySaverBB(bool gendc, std::string pixel_format){
+    if (gendc){
+        return "image_io_u3v_gendc";
+    }
+    
+    if (pixel_format == "Mono8" || pixel_format == "BayerBG8" || pixel_format == "BayerRG8"){
+        return "image_io_binarysaver_u8x2";
+    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"
+        || pixel_format == "BayerRG10" || pixel_format == "BayerRG12"
+        || pixel_format == "BayerBG10" || pixel_format == "BayerBG12"){
+        return "image_io_binarysaver_u16x2";
+    } else if (pixel_format == "RGB8" || pixel_format == "BGR8"){
+        return "image_io_binarysaver_u8x3";
+    } else{
+        throw std::runtime_error( pixel_format + " is currently not supported.");
+    }
+}
+
 int get_frame_size(nlohmann::json ith_sensor_config){
     int w = ith_sensor_config["width"];
     int h = ith_sensor_config["height"];
-    int d = ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono10 || ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono12 ? 2 : 1;
-    int c = ith_sensor_config["pfnc_pixelformat"] == PFNC_RGB8 || ith_sensor_config["pfnc_pixelformat"] == PFNC_BGR8 ? 3 : 1;
+    int d = getByteDepth(ith_sensor_config["pfnc_pixelformat"]);
+    int c = getNumChannel(ith_sensor_config["pfnc_pixelformat"]);
     return w * h * d * c;
 }
 
@@ -391,15 +464,22 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
                     ion::Param("input_deviceinfo.size", device_info.getNumDevice())
                 );
         }else{
-            std::string bb_save_image = device_info.getPixelFormat() == "Mono8" ? "image_io_binarysaver_u8x2" 
-                : "Mono10" || "Mono12"  ? "image_io_binarysaver_u16x2" : "image_io_binarysaver_u8x3";
+            std::string bb_save_image = getBinarySaverBB(device_info.isGenDCMode(), device_info.getPixelFormat());
             int width = device_info.getWidth();
             int height = device_info.getHeight();
-            n = b.add(bb_save_image)(n["output"], n["device_info"], n["frame_count"], &width, &height)
+            if (device_info.getNumDevice() == 2){
+                ion::Node coy_n = b.add(bb_save_image)(n["output"][1], n["device_info"][1], n["frame_count"][1], &width, &height)
                 .set_param(
                     ion::Param("output_directory", output_directory_path_),
-                    ion::Param("input_images.size", device_info.getNumDevice()),
-                    ion::Param("input_deviceinfo.size", device_info.getNumDevice())
+                    ion::Param("prefix", "sensor1-")
+                );
+                Halide::Buffer<int> cpy_terminator = Halide::Buffer<int>::make_scalar();
+                coy_n["output"].bind(cpy_terminator);
+            }
+            n = b.add(bb_save_image)(n["output"][0], n["device_info"][0], n["frame_count"][0], &width, &height)
+                .set_param(
+                    ion::Param("output_directory", output_directory_path_),
+                    ion::Param("prefix", "sensor0-")
                 );
         }
         Halide::Buffer<int> terminator = Halide::Buffer<int>::make_scalar();
