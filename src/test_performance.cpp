@@ -1,3 +1,15 @@
+/**
+
+g++ src/test_performance.cpp -o test_performance \
+-I src/ -I /opt/sensing-dev/include -I /opt/sensing-dev/include/aravis-0.8 \
+-I /opt/sensing-dev/include/opencv4 \
+-L /opt/sensing-dev/lib -L /opt/sensing-dev/lib/x86_64-linux-gnu \
+-l:libHalide.so.16 -lion-core -ldl -lpthread \
+-lopencv_core -lopencv_imgcodecs -lopencv_highgui -lopencv_imgproc \
+-laravis-0.8 -lgobject-2.0 `pkg-config --cflags --libs glib-2.0`
+
+**/
+
 #include <exception>
 #include <iostream>
 #include "arv.h"
@@ -395,7 +407,7 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
                     std::tuple<int32_t, int32_t> data_comp_and_part = gendc_descriptor.getFirstAvailableDataOffset(true);
                     int offset = gendc_descriptor.getOffsetFromTypeSpecific(std::get<0>(data_comp_and_part), std::get<1>(data_comp_and_part), 3, 0);
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor + offset));
-                    cursor += gendc_descriptor.getDescriptorSize();
+                    cursor += gendc_descriptor.getDescriptorSize() + gendc_descriptor.getContainerDataSize();
                 }
             }
         }else{
@@ -461,12 +473,19 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
 
         if (device_info.isGenDCMode()){
             int payloadsize = device_info.getPayloadSize();
-            n = b.add("image_io_binary_gendc_saver")(n["gendc"], n["device_info"], &payloadsize)
+            if (device_info.getNumDevice() == 2){
+                ion::Node coy_n = b.add("image_io_binary_gendc_saver")(n["gendc"][1], n["device_info"][1], &payloadsize)
                 .set_param(
-                    ion::Param("num_devices", device_info.getNumDevice()),
                     ion::Param("output_directory", output_directory_path_),
-                    ion::Param("input_gendc.size", device_info.getNumDevice()),
-                    ion::Param("input_deviceinfo.size", device_info.getNumDevice())
+                    ion::Param("prefix", "sensor0-")
+                );
+                Halide::Buffer<int> cpy_terminator = Halide::Buffer<int>::make_scalar();
+                coy_n["output"].bind(cpy_terminator);
+            }
+            n = b.add("image_io_binary_gendc_saver")(n["gendc"][0], n["device_info"][0], &payloadsize)
+                .set_param(
+                    ion::Param("output_directory", output_directory_path_),
+                    ion::Param("prefix", "sensor0-")
                 );
         }else{
             std::string bb_save_image = getBinarySaverBB(device_info.isGenDCMode(), device_info.getPixelFormat());
@@ -591,14 +610,17 @@ int main(int argc, char *argv[])
     }
     std::time_t now;
     std::time(&now);
-    std::tm tm;
-    #ifdef _MSC_VER
-    localtime_s(&tm, &now);
-    #else
-    &tm = std::localtime(&now);
-    #endif
     std::stringstream ss;
-    ss << saving_directory_prefix << std::put_time(&tm, "%Y-%m-%d-%H-%M-%S");
+
+    #ifdef _MSC_VER
+    std::tm tm;
+    localtime_s(&tm, &now);
+    ss << saving_directory_prefix << std::put_time(&tm, "%Y%m%d%H%M%S");
+    #else
+    std::tm* tm = std::localtime(&now); 
+    ss << saving_directory_prefix << std::put_time(tm, "%Y%m%d%H%M%S");
+    #endif
+
     std::filesystem::path saving_path = std::filesystem::path(directory.getValue()) / std::filesystem::path(ss.str());
     std::filesystem::create_directory(saving_path);
 
