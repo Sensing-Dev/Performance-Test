@@ -441,13 +441,18 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
         }
         n["output"].bind(output);
 
-        Halide::Buffer<uint32_t> frame_counts = Halide::Buffer<uint32_t>(device_info.getNumDevice());
-        n["frame_count"].bind(frame_counts);
+        std::vector<Halide::Buffer<uint32_t>> fc;
 
+        for (int i = 0; i < device_info.getNumDevice(); ++i){
+            Halide::Buffer<uint32_t> frame_counts = Halide::Buffer<uint32_t>(device_info.getNumDevice());
+            n["frame_count"][i].bind(frame_counts);
+            fc.push_back(frame_counts);
+        }
+        
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
             for (int d = 0; d < device_info.getNumDevice(); ++d){
-                framecount_record[d].push_back(frame_counts(d));
+                framecount_record[d].push_back(fc[d](0));
             }
         }
         return;
