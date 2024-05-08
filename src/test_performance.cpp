@@ -186,7 +186,6 @@ class DeviceInfo {
             num_devices_ = user_input_num_device;
             if (arv_device_is_feature_available(device, "OperationMode", &error)){
                 operation_mode_ = std::string(arv_device_get_string_feature_value(device, "OperationMode", &error));
-                std::cout << operation_mode_ << std::endl;
 
                 int expected_number_of_devices 
                     = operation_mode_ == "Came1USB1" ? 1
@@ -304,8 +303,8 @@ class TestInfo {
         }  
 };
 
-std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
-    if (gendc){
+std::string getImageAcquisitionBB(bool gendc, std::string pixel_format, bool realtime_eval){
+    if (gendc && !realtime_eval){
         return "image_io_u3v_gendc";
     }
 
@@ -431,7 +430,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
     b.with_bb_module("ion-bb");
 
     // the first BB: Obtain GenDC/images
-    ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat()))()
+    ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat(), test_info.isRealtimeEvaluationMode()))()
       .set_param(
         ion::Param("num_devices", device_info.getNumDevice()),
         ion::Param("frame_sync", true),
@@ -442,24 +441,18 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
     if (test_info.isRealtimeEvaluationMode()){
         logStatus("Recording and evaluating Process... Framecount is stored during the record.");
 
-
         std::vector< int > buf_size = std::vector < int >{ device_info.getWidth(), device_info.getHeight() };
         if (device_info.getPixelFormat() == "RGB8"){
             buf_size.push_back(3);
         }
         std::vector<Halide::Buffer<U>> output;
+        std::vector<Halide::Buffer<uint32_t>> fc;
         for (int i = 0; i < device_info.getNumDevice(); ++i){
-        output.push_back(Halide::Buffer<U>(buf_size));
+            output.push_back(Halide::Buffer<U>(buf_size));
+            fc.push_back(Halide::Buffer<uint32_t>(1));
         }
         n["output"].bind(output);
-
-        std::vector<Halide::Buffer<uint32_t>> fc;
-
-        for (int i = 0; i < device_info.getNumDevice(); ++i){
-            Halide::Buffer<uint32_t> frame_counts = Halide::Buffer<uint32_t>(device_info.getNumDevice());
-            n["frame_count"][i].bind(frame_counts);
-            fc.push_back(frame_counts);
-        }
+        n["frame_count"].bind(fc);
         
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
@@ -615,10 +608,10 @@ int main(int argc, char *argv[])
     #ifdef _MSC_VER
     std::tm tm;
     localtime_s(&tm, &now);
-    ss << saving_directory_prefix << std::put_time(&tm, "%Y%m%d%H%M%S");
+    ss << saving_directory_prefix << std::put_time(&tm, "%Y-%m-%d-%H-%M-%S");
     #else
     std::tm* tm = std::localtime(&now); 
-    ss << saving_directory_prefix << std::put_time(tm, "%Y%m%d%H%M%S");
+    ss << saving_directory_prefix << std::put_time(tm, "%Y-%m-%d-%H-%M-%S");
     #endif
 
     std::filesystem::path saving_path = std::filesystem::path(directory.getValue()) / std::filesystem::path(ss.str());
