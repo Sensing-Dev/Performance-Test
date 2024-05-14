@@ -356,68 +356,67 @@ int extractNumber(const std::string& filename) {
 }
 
 void getFrameCountFromBin(std::string output_directory, std::map<int, std::vector<int>>& framecount_record){
+
     logStatus("Post recording Process... Framecount data is generated.");
 
-    std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path("config.json"));
-    nlohmann::json config = nlohmann::json::parse(f);
+    for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
+        std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path("sensor"+std::to_string(ith_device)+"-config.json"));
+        nlohmann::json config = nlohmann::json::parse(f);
 
-    std::vector<std::string> bin_files;
-    for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".bin") {
-            bin_files.push_back(entry.path().filename().string());
+        std::vector<std::string> bin_files;
+        for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+                bin_files.push_back(entry.path().filename().string());
+            }
         }
-    }
-    std::sort(bin_files.begin(), bin_files.end(), [](const std::string& a, const std::string& b) {
-        return extractNumber(a) < extractNumber(b);
-    });
+        std::sort(bin_files.begin(), bin_files.end(), [](const std::string& a, const std::string& b) {
+            return extractNumber(a) < extractNumber(b);
+        });
 
-    std::vector<int> frame_size;
-    for (int i = 0; i < config["num_device"]; ++i){
-        frame_size.push_back(get_frame_size(config["sensor"+std::to_string(i+1)]));
-    }
+        int32_t frame_size = get_frame_size(config);
+        for (const auto& filename : bin_files){
+            std::filesystem::path jth_bin= std::filesystem::path(output_directory) / std::filesystem::path(filename);
+            if (!std::filesystem::exists(jth_bin)){
+                throw std::runtime_error(filename + " does not exist");
+            }
 
-    for (const auto& filename : bin_files){
-        std::filesystem::path jth_bin= std::filesystem::path(output_directory) / std::filesystem::path(filename);
+            std::ifstream ifs(jth_bin, std::ios::binary);
+            if (!ifs.is_open()){
+                throw std::runtime_error("Failed to open " + filename);
+            }
 
-        if (!std::filesystem::exists(jth_bin)){
-            throw std::runtime_error(filename + " does not exist");
-        }
+            ifs.seekg(0, std::ios::end);
+            std::streampos filesize = ifs.tellg();
+            ifs.seekg(0, std::ios::beg);
+            char* filecontent = new char[filesize];
 
-        std::ifstream ifs(jth_bin, std::ios::binary);
-        if (!ifs.is_open()){
-            throw std::runtime_error("Failed to open " + filename);
-        }
-        
-        ifs.seekg(0, std::ios::end);
-        std::streampos filesize = ifs.tellg();
-        ifs.seekg(0, std::ios::beg);
-        char* filecontent = new char[filesize];
+            if (!ifs.read(filecontent, filesize)) {
+                delete[] filecontent;
+                throw std::runtime_error("Failed to open " + filename);
+            }
 
-        if (!ifs.read(filecontent, filesize)) {
-            delete[] filecontent;
-            throw std::runtime_error("Failed to open " + filename);
-        }
-
-        int cursor = 0;
-        if (isGenDC(filecontent)){
-            while(cursor < static_cast<int>(filesize)){
-                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+            int cursor = 0;
+            if (isGenDC(filecontent)){
+                while(cursor < static_cast<int>(filesize)){
+                    
                     ContainerHeader gendc_descriptor= ContainerHeader(filecontent + cursor);
-                    std::tuple<int32_t, int32_t> data_comp_and_part = gendc_descriptor.getFirstAvailableDataOffset(true);
-                    int offset = gendc_descriptor.getOffsetFromTypeSpecific(std::get<0>(data_comp_and_part), std::get<1>(data_comp_and_part), 3, 0);
+                    int32_t image_component_index = gendc_descriptor.getFirstComponentIndexWithDatatypeOf(1);
+                    int offset = gendc_descriptor.getOffsetofTypeSpecific(image_component_index, 0, 3, 0);
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor + offset));
                     cursor += gendc_descriptor.getDescriptorSize() + gendc_descriptor.getContainerDataSize();
+                    
                 }
-            }
-        }else{
-            while(cursor < static_cast<int>(filesize)){
-                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+            }else{
+                while(cursor < static_cast<int>(filesize)){
+
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor));
-                    cursor += 4 + frame_size[ith_device];
+                    cursor += 4 + frame_size;
+
                 }
             }
+            delete[] filecontent;
         }
-        delete[] filecontent;
+
     }
 }
 
@@ -470,7 +469,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
                 ion::Node coy_n = b.add("image_io_binary_gendc_saver")(n["gendc"][1], n["device_info"][1], &payloadsize)
                 .set_param(
                     ion::Param("output_directory", output_directory_path_),
-                    ion::Param("prefix", "sensor0-")
+                    ion::Param("prefix", "sensor1-")
                 );
                 Halide::Buffer<int> cpy_terminator = Halide::Buffer<int>::make_scalar();
                 coy_n["output"].bind(cpy_terminator);
@@ -535,6 +534,7 @@ void writeLog(std::string output_directory, DeviceInfo& device_info, std::map<in
                 offset_frame_count = fc;
                 expected_frame_count = fc;
                 ofs[ith_device] << "offset_frame_count: " << fc << "\n";
+                first_frame = false;
             }
 
             bool frame_drop_occured = fc != expected_frame_count;
