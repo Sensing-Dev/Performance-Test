@@ -4,7 +4,7 @@ g++ src/test_performance.cpp -o test_performance \
 -I src/ -I /opt/sensing-dev/include -I /opt/sensing-dev/include/aravis-0.8 \
 -I /opt/sensing-dev/include/opencv4 \
 -L /opt/sensing-dev/lib -L /opt/sensing-dev/lib/x86_64-linux-gnu \
--l:libHalide.so.16 -lion-core -ldl -lpthread \
+-lHalide -lion-core -ldl -lpthread \
 -lopencv_core -lopencv_imgcodecs -lopencv_highgui -lopencv_imgproc \
 -laravis-0.8 -lgobject-2.0 `pkg-config --cflags --libs glib-2.0`
 
@@ -43,6 +43,10 @@ g++ src/test_performance.cpp -o test_performance \
 #define BayerBG8 0x0108000B
 #define BayerBG10 0x0110000F
 #define BayerBG12 0x01100013
+
+std::string getPrefix(int ith_device){
+    return "camera-" + std::to_string(ith_device) + "-";
+}
 
 int getPixelFormatInInt(std::string pixelformat){
     if (pixelformat == "Mono8"){
@@ -360,7 +364,7 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
     logStatus("Post recording Process... Framecount data is generated.");
 
     for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
-        std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path("sensor"+std::to_string(ith_device)+"-config.json"));
+        std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path(getPrefix(ith_device)+"config.json"));
         nlohmann::json config = nlohmann::json::parse(f);
 
         std::vector<std::string> bin_files;
@@ -464,7 +468,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
         logStatus("Recording Process... Bin files are generated.");
 
         ion::Param outpt_dir_param = ion::Param("output_directory", output_directory_path_);
-        std::vector<ion::Param> prefix_params = {ion::Param("prefix", "sensor0-"), ion::Param("prefix", "sensor1-")};
+        std::vector<ion::Param> prefix_params = {ion::Param("prefix", getPrefix(0)), ion::Param("prefix", getPrefix(1))};
         std::vector<Halide::Buffer<int>> terminators;
         std::vector<ion::Node> out_nodes;
         for (int i = 0; i < device_info.getNumDevice(); ++i){
@@ -513,7 +517,7 @@ void writeLog(std::string output_directory, DeviceInfo& device_info, std::map<in
     std::vector<std::ofstream> ofs;
 
     for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
-        logfile.push_back(std::filesystem::path(output_directory) / std::filesystem::path("camera-"+std::to_string(ith_device)+"-frame_log.txt"));
+        logfile.push_back(std::filesystem::path(output_directory) / std::filesystem::path(getPrefix(ith_device)+"frame_log.txt"));
         ofs.push_back(std::ofstream(logfile[ith_device], std::ios::out));
         ofs[ith_device] << device_info.getWidth() << "x" << device_info.getHeight() << "\n";
         std::cout << "\t" << logfile[ith_device] << std::endl;
@@ -634,6 +638,19 @@ int main(int argc, char *argv[])
             process_and_save<uint16_t>(device_info, test_info, ith_test_output_directory.u8string(), framecount_record);
         }
         writeLog(ith_test_output_directory.u8string(), device_info, framecount_record);
+
+        if (delete_bin.getValue()){
+            logStatus("Post Recording Process... Deleting bin files.");        
+            for (int d = 0; d < device_info.getNumDevice(); ++d){
+                std::string file_prefix = getPrefix(d);
+                for (const auto& entry : std::filesystem::directory_iterator(ith_test_output_directory)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".bin" && entry.path().stem().string().find(file_prefix) == 0) {
+                        std::filesystem::remove(entry.path());
+                    }
+                }
+                
+            }
+        }
         
     }
 
