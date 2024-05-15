@@ -14,7 +14,8 @@ import argparse
 from pathlib import Path
 
 import os
-os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
+if os.name == 'nt':
+    os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
 
 import gi
 gi.require_version("Aravis", "0.8")
@@ -57,6 +58,9 @@ def log_warning_write(msg):
 
 def log_status_write(msg):
     log_write("STATUS", msg)
+
+def get_prefix(ith_device):
+    return 'camera-' + str(ith_device) + '-'
 
 def get_device_info(parser):
     dev_info ={}
@@ -151,21 +155,47 @@ def get_bb_for_save_image(gendc, pixelformat):
         raise Exception("Currently not supported")
 
 GDC_INTENSITY   = 0x0000000000000001
-PFNC_Mono8 = 0x01080001
-PFNC_Mono10 = 0x01100003
-PFNC_Mono12 = 0x01100005
-PFNC_RGB8 = 0x02180014
-PFNC_BGR8 = 0x02180015
+Mono8 = 0x01080001
+Mono10 = 0x01100003
+Mono12 = 0x01100005
+RGB8 = 0x02180014
+BGR8 = 0x02180015
+BayerBG8 = 0x0108000B
+BayerBG10 = 0x0110000F
+BayerBG12 = 0x01100013
 gain = 40
 exposure = 400
 
-if os.name == 'nt':
-    module_name = 'ion-bb.dll'
-elif os.name == 'posix':
-    module_name = 'libion-bb.so'
+def get_pixelformat_in_int(str_pf):
+    if str_pf == "Mono8":
+        return Mono8
+    elif str_pf == "Mono10":
+        return Mono10
+    elif str_pf == "Mono12":
+        return Mono12
+    elif str_pf == "RGB8":
+        return RGB8
+    elif str_pf == "BGR8":
+        return BGR8
+    elif str_pf == "BayerBG8":
+        return BayerBG8
+    elif str_pf == "BayerBG10":
+        return BayerBG10
+    elif str_pf == "BayerBG12":
+        return BayerBG12
+    else:
+        raise Exception(str_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
+    
+def get_bytedepth(int_pf):
+    if int_pf == Mono8 or int_pf == RGB8 or int_pf == BGR8 or int_pf == BayerBG8:
+        return 1
+    elif int_pf == Mono10 or int_pf == Mono12 or int_pf == BayerBG10 or int_pf == BayerBG12:
+        return 2
+    else:
+        raise Exception(int_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
 
-def open_and_check(output_directory):
-    f = open(os.path.join(output_directory, "config.json"))
+def open_and_check(output_directory, ith_sensor):
+    f = open(os.path.join(output_directory, get_prefix(ith_sensor) + "config.json"))
     config = json.loads(f.read())
     f.close()
     return config
@@ -179,51 +209,46 @@ def open_bin_file(bin_file):
 def get_frame_size(ith_sensor_config):   
     w = ith_sensor_config["width"]
     h = ith_sensor_config["height"]
-    d = 2 if ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono10 or ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono12 \
+    d = 2 if ith_sensor_config["pfnc_pixelformat"] == Mono10 or ith_sensor_config["pfnc_pixelformat"] == Mono12 \
         else 1
-    c = 3 if ith_sensor_config["pfnc_pixelformat"] == PFNC_RGB8 or ith_sensor_config["pfnc_pixelformat"] == PFNC_BGR8 \
+    c = 3 if ith_sensor_config["pfnc_pixelformat"] == RGB8 or ith_sensor_config["pfnc_pixelformat"] == BGR8 \
         else 1
     return w * h * d * c
 
-def load_and_get_framecount(output_directory):
+def load_and_get_framecount(output_directory, num_devices):
 
     log_status_write("Post recording Process... Framecount data is generated.")
 
-    config = open_and_check(output_directory)
-    num_devices = config["num_device"]
-
     framecount_record = {}
-    for i in range(dev_info["Number of Devices"]):
-        framecount_record[i] = []
 
-    bin_files = [f for f in os.listdir(output_directory) if f.startswith("raw-") and f.endswith(".bin")]
-    bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
+    for ith_sensor in range(num_devices):
+        config = open_and_check(output_directory, ith_sensor)
+        framecount_record[ith_sensor] = []
 
-    framesize = []
-    for ith_device in range(num_devices):
-        framesize.append(get_frame_size(config["sensor"+str(ith_device+1)]))
+        bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
+        bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
 
-    for bf in bin_files:
-        bin_file = os.path.join(output_directory, bf)
+        framesize = get_frame_size(config)
 
-        with open(bin_file, mode='rb') as ifs:
-            filecontent = ifs.read()   
-            cursor = 0
+        for bf in bin_files:
+            bin_file = os.path.join(output_directory, bf)
 
-            while cursor < len(filecontent):
-                for ith_device in range(num_devices):
+            with open(bin_file, mode='rb') as ifs:
+                filecontent = ifs.read()   
+                cursor = 0
+
+                while cursor < len(filecontent):
                     try:
                         # TODO return NULL for non-gendc format
                         gendc_descriptor = gendc.Container(filecontent[cursor:])
-                        gendc_descriptor = gendc.Container(filecontent[cursor:])
-                        image_component = gendc_descriptor.get_first_get_datatype_of(GDC_INTENSITY)
+                        image_component = gendc_descriptor.get_first_component_datatype_of(GDC_INTENSITY)
                         typespecific3 = gendc_descriptor.get("TypeSpecific", image_component, 0)[2]
-                        framecount_record[ith_device].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
+                        framecount_record[ith_sensor].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
                         cursor = cursor + gendc_descriptor.get_container_size()
 
                     except:
-                        framecount_record[ith_device].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
-                        cursor = cursor + 4 + framesize[ith_device]
+                        framecount_record[ith_sensor].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
+                        cursor = cursor + 4 + framesize
 
     return framecount_record
 
@@ -234,7 +259,7 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
 
     builder = Builder()
     builder.set_target('host')
-    builder.with_bb_module(module_name)
+    builder.with_bb_module('ion-bb')
 
     # input port for the second BB #############################################
     # if gendc
@@ -259,24 +284,22 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         output_p = node.get_port('output')
         frame_count_p = node.get_port('frame_count')
         # output values
-        data_type = np.uint8 if dev_info["PixelFormat"] == "Mono8" or dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8" \
-            else np.uint16 if dev_info["PixelFormat"] == "Mono10" or dev_info["PixelFormat"] == "Mono12" \
-            else np.uint8
+        data_type = np.uint8 if get_bytedepth(eval(dev_info["PixelFormat"])) == 1 else np.uint16
         
         outputs = []
         output_datas = []
         output_size = (dev_info["Height"], dev_info["Width"], )
         if dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8":
             output_size += (3,)
+        fcdatas = []
+        frame_counts = []
         for i in range(dev_info["Number of Devices"]):
             output_datas.append(np.full(output_size, fill_value=0, dtype=data_type))
             outputs.append(Buffer(array= output_datas[i]))
-    
-        fcdatas = np.full((dev_info["Number of Devices"]), fill_value=0, dtype=np.uint32)
-        frame_counts = Buffer(array=fcdatas)
+            fcdatas.append(np.zeros(1, dtype=np.uint32))
+            frame_counts.append(Buffer(array=fcdatas[i]))
 
-        for i in range(dev_info["Number of Devices"]):
-            output_p[i].bind(outputs[i])
+        output_p.bind(outputs)
         frame_count_p.bind(frame_counts)
 
         framecount_record = {}
@@ -289,24 +312,28 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
             builder.run()
 
             for nd in range(dev_info["Number of Devices"]):
-                framecount_record[nd].append(fcdatas[nd])
+                framecount_record[nd].append(fcdatas[i][0])
         return framecount_record
     else:
-        if dev_info["GenDCStreamingMode"]:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
-                .set_param([num_devices, output_directory, 
-                            Param('input_gendc.size', dev_info["Number of Devices"]),
-                            Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
-        else:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('output'), \
-                            node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
-                .set_param([num_devices, output_directory, \
-                        Param('input_images.size', dev_info["Number of Devices"]), \
-                        Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+        prefix_params = [Param('prefix', get_prefix(0)), Param('prefix', get_prefix(1))]
+        terminators = [Buffer(Type(TypeCode.Int, 32, 1), ()), Buffer(Type(TypeCode.Int, 32, 1), ())]
+        out_nodes = []
 
-        terminator = node.get_port('output')
+        if dev_info["GenDCStreamingMode"]:
+            for ith_device in range(dev_info["Number of Devices"]):
+                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                    .set_iport([node.get_port('gendc')[ith_device], node.get_port('device_info')[ith_device], payloadsize_p, ])\
+                    .set_param([prefix_params[ith_device], output_directory]))
+            
+        else:
+            for ith_device in range(dev_info["Number of Devices"]):
+                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                    .set_iport([
+                        node.get_port('output')[ith_device], 
+                        node.get_port('device_info')[ith_device], 
+                        node.get_port('frame_count')[ith_device], 
+                        wp, hp, ])\
+                    .set_param([prefix_params[ith_device], output_directory]))
    
         if dev_info["GenDCStreamingMode"]:
             payloadsize_p.bind(dev_info["PayloadSize"])
@@ -315,15 +342,15 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
             hp.bind(dev_info["Height"])
 
         # output values 
-        out = Buffer(Type(TypeCode.Int, 32, 1), ())
-        terminator.bind(out)
+        for ith_device in range(dev_info["Number of Devices"]):
+            out_nodes[ith_device].get_port('output').bind(terminators[ith_device])
 
         log_status_write("Recording Process... Bin files are generated.")
 
         for x in range(test_info["Number of Frames"]):
             builder.run()
 
-        return load_and_get_framecount(output_directory_path)
+        return load_and_get_framecount(output_directory_path, dev_info["Number of Devices"])
 
 def write_log(output_directory, dev_info, framecount_record, last_run):
 
@@ -333,7 +360,7 @@ def write_log(output_directory, dev_info, framecount_record, last_run):
     logfile = []
     ofs = []
     for ith_device in range(dev_info["Number of Devices"]):
-        logfile.append(os.path.join(output_directory, 'camera-'+str(ith_device)+'-frame_log.txt'))
+        logfile.append(os.path.join(output_directory, get_prefix(ith_device)+'frame_log.txt'))
         ofs.append(open(logfile[ith_device], mode='w'))
         ofs[ith_device].write(str(dev_info["Width"])+'x'+str(dev_info["Height"])+'\n')
         print('\t{0}'.format(logfile[ith_device]))
@@ -375,9 +402,9 @@ def write_log(output_directory, dev_info, framecount_record, last_run):
 
     return True
 
-def delete_bin_files(output_directory):
+def delete_bin_files(output_directory, ith_sensor):
     log_status_write("Post Recording Process... Deleting bin files.")
-    bin_files = [f for f in os.listdir(output_directory) if f.startswith("raw-") and f.endswith(".bin")]
+    bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
     for i, bf in enumerate(bin_files):
         bin_file = os.path.join(output_directory, bf)
         os.remove(bin_file)
@@ -393,7 +420,8 @@ if __name__ == "__main__":
 
         ret = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
         if test_info["Delete Bin files"]:
-            delete_bin_files(ith_test_output_directory)
+            for nd in range(dev_info["Number of Devices"]):
+                delete_bin_files(ith_test_output_directory, nd)
         ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
 
     

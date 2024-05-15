@@ -1,3 +1,15 @@
+/**
+
+g++ src/test_performance.cpp -o test_performance \
+-I src/ -I /opt/sensing-dev/include -I /opt/sensing-dev/include/aravis-0.8 \
+-I /opt/sensing-dev/include/opencv4 \
+-L /opt/sensing-dev/lib -L /opt/sensing-dev/lib/x86_64-linux-gnu \
+-lHalide -lion-core -ldl -lpthread \
+-lopencv_core -lopencv_imgcodecs -lopencv_highgui -lopencv_imgproc \
+-laravis-0.8 -lgobject-2.0 `pkg-config --cflags --libs glib-2.0`
+
+**/
+
 #include <exception>
 #include <iostream>
 #include "arv.h"
@@ -22,11 +34,68 @@
 
 #define LOG_DISPLAY true
 
-#define PFNC_Mono8 0x01080001
-#define PFNC_Mono10 0x01100003
-#define PFNC_Mono12 0x01100005
-#define PFNC_RGB8 0x02180014
-#define PFNC_BGR8 0x02180015
+// The other PixelFormat values are https://www.emva.org/wp-content/uploads/GenICamPixelFormatValues.pdf
+#define Mono8 0x01080001
+#define Mono10 0x01100003
+#define Mono12 0x01100005
+#define RGB8 0x02180014
+#define BGR8 0x02180015
+#define BayerBG8 0x0108000B
+#define BayerBG10 0x0110000F
+#define BayerBG12 0x01100013
+
+std::string getPrefix(int ith_device){
+    return "camera-" + std::to_string(ith_device) + "-";
+}
+
+int getPixelFormatInInt(std::string pixelformat){
+    if (pixelformat == "Mono8"){
+        return Mono8;
+    }else if (pixelformat == "Mono10"){
+        return Mono10;
+    }else if (pixelformat == "Mono12"){
+        return Mono12;
+    }else if (pixelformat == "RGB8"){
+        return RGB8;
+    }else if (pixelformat == "BGR8"){
+        return BGR8;
+    }else if (pixelformat == "BayerBG8"){
+        return BayerBG8;
+    }else if (pixelformat == "BayerBG10"){
+        return BayerBG10;
+    }else if (pixelformat == "BayerBG12"){
+        return BayerBG12;
+    }else{
+        throw std::runtime_error(pixelformat + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ");
+    }
+}
+
+int getByteDepth(int pfnc_pixelformat){
+    if (pfnc_pixelformat == Mono8 || pfnc_pixelformat == RGB8 || pfnc_pixelformat == BGR8 || pfnc_pixelformat == BayerBG8){
+        return 1;
+    }else if (pfnc_pixelformat == Mono10 || pfnc_pixelformat == Mono12 || pfnc_pixelformat == BayerBG10 || pfnc_pixelformat == BayerBG12){
+        return 2;
+    }else{
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::uppercase << pfnc_pixelformat << " is not supported as default in this tool.\nPlease update getByteDepth()";
+        std::string hexString = ss.str();
+        throw std::runtime_error(hexString);
+    }
+}
+
+int getNumChannel(int pfnc_pixelformat){
+    if (pfnc_pixelformat == Mono8 || pfnc_pixelformat == Mono10 || pfnc_pixelformat == Mono12 || 
+        pfnc_pixelformat == BayerBG8 || pfnc_pixelformat == BayerBG10 || pfnc_pixelformat == BayerBG12){
+        return 1;
+    }else if (pfnc_pixelformat == RGB8 || pfnc_pixelformat == BGR8){
+        return 3;
+    }else{
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::uppercase << pfnc_pixelformat << " is not supported as default in this tool.\nPlease update getNumChannel()";
+        std::string hexString = ss.str();
+        throw std::runtime_error(hexString);
+    }
+}
 
 void logWrite(std::string log_type, std::string msg){
     if(LOG_DISPLAY){
@@ -121,7 +190,6 @@ class DeviceInfo {
             num_devices_ = user_input_num_device;
             if (arv_device_is_feature_available(device, "OperationMode", &error)){
                 operation_mode_ = std::string(arv_device_get_string_feature_value(device, "OperationMode", &error));
-                std::cout << operation_mode_ << std::endl;
 
                 int expected_number_of_devices 
                     = operation_mode_ == "Came1USB1" ? 1
@@ -140,7 +208,7 @@ class DeviceInfo {
 
             if (arv_device_is_feature_available(device, "GenDCDescriptor", &error)
                 && arv_device_is_feature_available(device, "GenDCStreamingMode", &error)
-                && arv_device_get_string_feature_value(device, "GenDCStreamingMode", &error) == "On"
+                && std::strcmp(arv_device_get_string_feature_value(device, "GenDCStreamingMode", &error), "On") == 0
             ){
                 gendc_streaming_mode_ = true;
             }
@@ -239,14 +307,16 @@ class TestInfo {
         }  
 };
 
-std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
-    if (gendc){
+std::string getImageAcquisitionBB(bool gendc, std::string pixel_format, bool realtime_eval){
+    if (gendc && !realtime_eval){
         return "image_io_u3v_gendc";
     }
 
-    if (pixel_format == "Mono8"){
+    if (pixel_format == "Mono8" || pixel_format == "BayerBG8" || pixel_format == "BayerRG8"){
         return "image_io_u3v_cameraN_u8x2";
-    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"){
+    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"
+        || pixel_format == "BayerRG10" || pixel_format == "BayerRG12"
+        || pixel_format == "BayerBG10" || pixel_format == "BayerBG12"){
         return "image_io_u3v_cameraN_u16x2";
     } else if (pixel_format == "RGB8" || pixel_format == "BGR8"){
         return "image_io_u3v_cameraN_u8x3";
@@ -255,11 +325,29 @@ std::string getImageAcquisitionBB(bool gendc, std::string pixel_format){
     }
 }
 
+std::string getBinarySaverBB(bool gendc, std::string pixel_format){
+    if (gendc){
+        return "image_io_u3v_gendc";
+    }
+    
+    if (pixel_format == "Mono8" || pixel_format == "BayerBG8" || pixel_format == "BayerRG8"){
+        return "image_io_binarysaver_u8x2";
+    } else if (pixel_format == "Mono10" || pixel_format == "Mono12"
+        || pixel_format == "BayerRG10" || pixel_format == "BayerRG12"
+        || pixel_format == "BayerBG10" || pixel_format == "BayerBG12"){
+        return "image_io_binarysaver_u16x2";
+    } else if (pixel_format == "RGB8" || pixel_format == "BGR8"){
+        return "image_io_binarysaver_u8x3";
+    } else{
+        throw std::runtime_error( pixel_format + " is currently not supported.");
+    }
+}
+
 int get_frame_size(nlohmann::json ith_sensor_config){
     int w = ith_sensor_config["width"];
     int h = ith_sensor_config["height"];
-    int d = ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono10 || ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono12 ? 2 : 1;
-    int c = ith_sensor_config["pfnc_pixelformat"] == PFNC_RGB8 || ith_sensor_config["pfnc_pixelformat"] == PFNC_BGR8 ? 3 : 1;
+    int d = getByteDepth(ith_sensor_config["pfnc_pixelformat"]);
+    int c = getNumChannel(ith_sensor_config["pfnc_pixelformat"]);
     return w * h * d * c;
 }
 
@@ -272,68 +360,67 @@ int extractNumber(const std::string& filename) {
 }
 
 void getFrameCountFromBin(std::string output_directory, std::map<int, std::vector<int>>& framecount_record){
+
     logStatus("Post recording Process... Framecount data is generated.");
 
-    std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path("config.json"));
-    nlohmann::json config = nlohmann::json::parse(f);
+    for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
+        std::ifstream f(std::filesystem::path(output_directory) / std::filesystem::path(getPrefix(ith_device)+"config.json"));
+        nlohmann::json config = nlohmann::json::parse(f);
 
-    std::vector<std::string> bin_files;
-    for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".bin") {
-            bin_files.push_back(entry.path().filename().string());
+        std::vector<std::string> bin_files;
+        for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+                bin_files.push_back(entry.path().filename().string());
+            }
         }
-    }
-    std::sort(bin_files.begin(), bin_files.end(), [](const std::string& a, const std::string& b) {
-        return extractNumber(a) < extractNumber(b);
-    });
+        std::sort(bin_files.begin(), bin_files.end(), [](const std::string& a, const std::string& b) {
+            return extractNumber(a) < extractNumber(b);
+        });
 
-    std::vector<int> frame_size;
-    for (int i = 0; i < config["num_device"]; ++i){
-        frame_size.push_back(get_frame_size(config["sensor"+std::to_string(i+1)]));
-    }
+        int32_t frame_size = get_frame_size(config);
+        for (const auto& filename : bin_files){
+            std::filesystem::path jth_bin= std::filesystem::path(output_directory) / std::filesystem::path(filename);
+            if (!std::filesystem::exists(jth_bin)){
+                throw std::runtime_error(filename + " does not exist");
+            }
 
-    for (const auto& filename : bin_files){
-        std::filesystem::path jth_bin= std::filesystem::path(output_directory) / std::filesystem::path(filename);
+            std::ifstream ifs(jth_bin, std::ios::binary);
+            if (!ifs.is_open()){
+                throw std::runtime_error("Failed to open " + filename);
+            }
 
-        if (!std::filesystem::exists(jth_bin)){
-            throw std::runtime_error(filename + " does not exist");
-        }
+            ifs.seekg(0, std::ios::end);
+            std::streampos filesize = ifs.tellg();
+            ifs.seekg(0, std::ios::beg);
+            char* filecontent = new char[filesize];
 
-        std::ifstream ifs(jth_bin, std::ios::binary);
-        if (!ifs.is_open()){
-            throw std::runtime_error("Failed to open " + filename);
-        }
-        
-        ifs.seekg(0, std::ios::end);
-        std::streampos filesize = ifs.tellg();
-        ifs.seekg(0, std::ios::beg);
-        char* filecontent = new char[filesize];
+            if (!ifs.read(filecontent, filesize)) {
+                delete[] filecontent;
+                throw std::runtime_error("Failed to open " + filename);
+            }
 
-        if (!ifs.read(filecontent, filesize)) {
-            delete[] filecontent;
-            throw std::runtime_error("Failed to open " + filename);
-        }
-
-        int cursor = 0;
-        if (isGenDC(filecontent)){
-            while(cursor < static_cast<int>(filesize)){
-                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+            int cursor = 0;
+            if (isGenDC(filecontent)){
+                while(cursor < static_cast<int>(filesize)){
+                    
                     ContainerHeader gendc_descriptor= ContainerHeader(filecontent + cursor);
-                    std::tuple<int32_t, int32_t> data_comp_and_part = gendc_descriptor.getFirstAvailableDataOffset(true);
-                    int offset = gendc_descriptor.getOffsetFromTypeSpecific(std::get<0>(data_comp_and_part), std::get<1>(data_comp_and_part), 3, 0);
+                    int32_t image_component_index = gendc_descriptor.getFirstComponentIndexWithDatatypeOf(1);
+                    int offset = gendc_descriptor.getOffsetofTypeSpecific(image_component_index, 0, 3, 0);
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor + offset));
-                    cursor += gendc_descriptor.getDescriptorSize();
+                    cursor += gendc_descriptor.getDescriptorSize() + gendc_descriptor.getContainerDataSize();
+                    
                 }
-            }
-        }else{
-            while(cursor < static_cast<int>(filesize)){
-                for (int ith_device = 0; ith_device < config["num_device"]; ++ith_device){
+            }else{
+                while(cursor < static_cast<int>(filesize)){
+
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor));
-                    cursor += 4 + frame_size[ith_device];
+                    cursor += 4 + frame_size;
+
                 }
             }
+            delete[] filecontent;
         }
-        delete[] filecontent;
+
     }
 }
 
@@ -346,7 +433,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
     b.with_bb_module("ion-bb");
 
     // the first BB: Obtain GenDC/images
-    ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat()))()
+    ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat(), test_info.isRealtimeEvaluationMode()))()
       .set_param(
         ion::Param("num_devices", device_info.getNumDevice()),
         ion::Param("frame_sync", true),
@@ -357,54 +444,64 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
     if (test_info.isRealtimeEvaluationMode()){
         logStatus("Recording and evaluating Process... Framecount is stored during the record.");
 
-
         std::vector< int > buf_size = std::vector < int >{ device_info.getWidth(), device_info.getHeight() };
         if (device_info.getPixelFormat() == "RGB8"){
             buf_size.push_back(3);
         }
         std::vector<Halide::Buffer<U>> output;
+        std::vector<Halide::Buffer<uint32_t>> fc;
         for (int i = 0; i < device_info.getNumDevice(); ++i){
-        output.push_back(Halide::Buffer<U>(buf_size));
+            output.push_back(Halide::Buffer<U>(buf_size));
+            fc.push_back(Halide::Buffer<uint32_t>(1));
         }
         n["output"].bind(output);
-
-        Halide::Buffer<uint32_t> frame_counts = Halide::Buffer<uint32_t>(device_info.getNumDevice());
-        n["frame_count"].bind(frame_counts);
-
+        n["frame_count"].bind(fc);
+        
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
             for (int d = 0; d < device_info.getNumDevice(); ++d){
-                framecount_record[d].push_back(frame_counts(d));
+                framecount_record[d].push_back(fc[d](0));
             }
         }
         return;
     }else{
         logStatus("Recording Process... Bin files are generated.");
 
+        ion::Param outpt_dir_param = ion::Param("output_directory", output_directory_path_);
+        std::vector<ion::Param> prefix_params = {ion::Param("prefix", getPrefix(0)), ion::Param("prefix", getPrefix(1))};
+        std::vector<Halide::Buffer<int>> terminators;
+        std::vector<ion::Node> out_nodes;
+        for (int i = 0; i < device_info.getNumDevice(); ++i){
+            terminators.push_back(Halide::Buffer<int>::make_scalar());
+        }
+
+        // add binary saver BB
         if (device_info.isGenDCMode()){
             int payloadsize = device_info.getPayloadSize();
-            n = b.add("image_io_binary_gendc_saver")(n["gendc"], n["device_info"], &payloadsize)
+            for (int i = 0; i < device_info.getNumDevice(); ++i){
+                out_nodes.push_back(b.add("image_io_binary_gendc_saver")(n["gendc"][i], n["device_info"][i], &payloadsize)
                 .set_param(
-                    ion::Param("num_devices", device_info.getNumDevice()),
-                    ion::Param("output_directory", output_directory_path_),
-                    ion::Param("input_gendc.size", device_info.getNumDevice()),
-                    ion::Param("input_deviceinfo.size", device_info.getNumDevice())
-                );
+                    outpt_dir_param, prefix_params[i]
+                ));
+            }
         }else{
-            std::string bb_save_image = device_info.getPixelFormat() == "Mono8" ? "image_io_binarysaver_u8x2" 
-                : "Mono10" || "Mono12"  ? "image_io_binarysaver_u16x2" : "image_io_binarysaver_u8x3";
+            std::string bb_save_image = getBinarySaverBB(device_info.isGenDCMode(), device_info.getPixelFormat());
             int width = device_info.getWidth();
             int height = device_info.getHeight();
-            n = b.add(bb_save_image)(n["output"], n["device_info"], n["frame_count"], &width, &height)
+            for (int i = 0; i < device_info.getNumDevice(); ++i){
+                out_nodes.push_back(b.add(bb_save_image)(n["output"][i], n["device_info"][i], n["frame_count"][i], &width, &height)
                 .set_param(
-                    ion::Param("output_directory", output_directory_path_),
-                    ion::Param("input_images.size", device_info.getNumDevice()),
-                    ion::Param("input_deviceinfo.size", device_info.getNumDevice())
-                );
+                    outpt_dir_param, prefix_params[i]
+                ));  
+            }
         }
-        Halide::Buffer<int> terminator = Halide::Buffer<int>::make_scalar();
-        n["output"].bind(terminator);
 
+        // bind output ports with buffers 
+        for (int i = 0; i < device_info.getNumDevice(); ++i){
+            out_nodes[i]["output"].bind(terminators[i]);
+        }
+            
+        // execute the pipeline
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
         }
@@ -420,7 +517,7 @@ void writeLog(std::string output_directory, DeviceInfo& device_info, std::map<in
     std::vector<std::ofstream> ofs;
 
     for (int ith_device = 0; ith_device < framecount_record.size(); ++ith_device){
-        logfile.push_back(std::filesystem::path(output_directory) / std::filesystem::path("camera-"+std::to_string(ith_device)+"-frame_log.txt"));
+        logfile.push_back(std::filesystem::path(output_directory) / std::filesystem::path(getPrefix(ith_device)+"frame_log.txt"));
         ofs.push_back(std::ofstream(logfile[ith_device], std::ios::out));
         ofs[ith_device] << device_info.getWidth() << "x" << device_info.getHeight() << "\n";
         std::cout << "\t" << logfile[ith_device] << std::endl;
@@ -438,6 +535,7 @@ void writeLog(std::string output_directory, DeviceInfo& device_info, std::map<in
                 offset_frame_count = fc;
                 expected_frame_count = fc;
                 ofs[ith_device] << "offset_frame_count: " << fc << "\n";
+                first_frame = false;
             }
 
             bool frame_drop_occured = fc != expected_frame_count;
@@ -506,14 +604,17 @@ int main(int argc, char *argv[])
     }
     std::time_t now;
     std::time(&now);
-    std::tm tm;
-    #ifdef _MSC_VER
-    localtime_s(&tm, &now);
-    #else
-    &tm = std::localtime(&now);
-    #endif
     std::stringstream ss;
+
+    #ifdef _MSC_VER
+    std::tm tm;
+    localtime_s(&tm, &now);
     ss << saving_directory_prefix << std::put_time(&tm, "%Y-%m-%d-%H-%M-%S");
+    #else
+    std::tm* tm = std::localtime(&now); 
+    ss << saving_directory_prefix << std::put_time(tm, "%Y-%m-%d-%H-%M-%S");
+    #endif
+
     std::filesystem::path saving_path = std::filesystem::path(directory.getValue()) / std::filesystem::path(ss.str());
     std::filesystem::create_directory(saving_path);
 
@@ -537,6 +638,19 @@ int main(int argc, char *argv[])
             process_and_save<uint16_t>(device_info, test_info, ith_test_output_directory.u8string(), framecount_record);
         }
         writeLog(ith_test_output_directory.u8string(), device_info, framecount_record);
+
+        if (delete_bin.getValue()){
+            logStatus("Post Recording Process... Deleting bin files.");        
+            for (int d = 0; d < device_info.getNumDevice(); ++d){
+                std::string file_prefix = getPrefix(d);
+                for (const auto& entry : std::filesystem::directory_iterator(ith_test_output_directory)) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".bin" && entry.path().stem().string().find(file_prefix) == 0) {
+                        std::filesystem::remove(entry.path());
+                    }
+                }
+                
+            }
+        }
         
     }
 
