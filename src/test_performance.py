@@ -151,18 +151,44 @@ def get_bb_for_save_image(gendc, pixelformat):
         raise Exception("Currently not supported")
 
 GDC_INTENSITY   = 0x0000000000000001
-PFNC_Mono8 = 0x01080001
-PFNC_Mono10 = 0x01100003
-PFNC_Mono12 = 0x01100005
-PFNC_RGB8 = 0x02180014
-PFNC_BGR8 = 0x02180015
+Mono8 = 0x01080001
+Mono10 = 0x01100003
+Mono12 = 0x01100005
+RGB8 = 0x02180014
+BGR8 = 0x02180015
+BayerBG8 = 0x0108000B
+BayerBG10 = 0x0110000F
+BayerBG12 = 0x01100013
 gain = 40
 exposure = 400
 
-if os.name == 'nt':
-    module_name = 'ion-bb.dll'
-elif os.name == 'posix':
-    module_name = 'libion-bb.so'
+def get_pixelformat_in_int(str_pf):
+    if str_pf == "Mono8":
+        return Mono8
+    elif str_pf == "Mono10":
+        return Mono10
+    elif str_pf == "Mono12":
+        return Mono12
+    elif str_pf == "RGB8":
+        return RGB8
+    elif str_pf == "BGR8":
+        return BGR8
+    elif str_pf == "BayerBG8":
+        return BayerBG8
+    elif str_pf == "BayerBG10":
+        return BayerBG10
+    elif str_pf == "BayerBG12":
+        return BayerBG12
+    else:
+        raise Exception(str_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
+    
+def get_bytedepth(int_pf):
+    if int_pf == Mono8 or int_pf == RGB8 or int_pf == BGR8 or int_pf == BayerBG8:
+        return 1
+    elif int_pf == Mono10 or int_pf == Mono12 or int_pf == BayerBG10 or int_pf == BayerBG12:
+        return 2
+    else:
+        raise Exception(int_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
 
 def open_and_check(output_directory):
     f = open(os.path.join(output_directory, "config.json"))
@@ -179,9 +205,9 @@ def open_bin_file(bin_file):
 def get_frame_size(ith_sensor_config):   
     w = ith_sensor_config["width"]
     h = ith_sensor_config["height"]
-    d = 2 if ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono10 or ith_sensor_config["pfnc_pixelformat"] == PFNC_Mono12 \
+    d = 2 if ith_sensor_config["pfnc_pixelformat"] == Mono10 or ith_sensor_config["pfnc_pixelformat"] == Mono12 \
         else 1
-    c = 3 if ith_sensor_config["pfnc_pixelformat"] == PFNC_RGB8 or ith_sensor_config["pfnc_pixelformat"] == PFNC_BGR8 \
+    c = 3 if ith_sensor_config["pfnc_pixelformat"] == RGB8 or ith_sensor_config["pfnc_pixelformat"] == GR8 \
         else 1
     return w * h * d * c
 
@@ -234,7 +260,7 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
 
     builder = Builder()
     builder.set_target('host')
-    builder.with_bb_module(module_name)
+    builder.with_bb_module('ion-bb')
 
     # input port for the second BB #############################################
     # if gendc
@@ -259,24 +285,22 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         output_p = node.get_port('output')
         frame_count_p = node.get_port('frame_count')
         # output values
-        data_type = np.uint8 if dev_info["PixelFormat"] == "Mono8" or dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8" \
-            else np.uint16 if dev_info["PixelFormat"] == "Mono10" or dev_info["PixelFormat"] == "Mono12" \
-            else np.uint8
+        data_type = np.uint8 if get_bytedepth(eval(dev_info["PixelFormat"])) == 1 else np.uint16
         
         outputs = []
         output_datas = []
         output_size = (dev_info["Height"], dev_info["Width"], )
         if dev_info["PixelFormat"] == "RGB8" or dev_info["PixelFormat"] == "BGR8":
             output_size += (3,)
+        fcdatas = []
+        frame_counts = []
         for i in range(dev_info["Number of Devices"]):
             output_datas.append(np.full(output_size, fill_value=0, dtype=data_type))
             outputs.append(Buffer(array= output_datas[i]))
-    
-        fcdatas = np.full((dev_info["Number of Devices"]), fill_value=0, dtype=np.uint32)
-        frame_counts = Buffer(array=fcdatas)
+            fcdatas.append(np.zeros(1, dtype=np.uint32))
+            frame_counts.append(Buffer(array=fcdatas[i]))
 
-        for i in range(dev_info["Number of Devices"]):
-            output_p[i].bind(outputs[i])
+        output_p.bind(outputs)
         frame_count_p.bind(frame_counts)
 
         framecount_record = {}
@@ -289,7 +313,7 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
             builder.run()
 
             for nd in range(dev_info["Number of Devices"]):
-                framecount_record[nd].append(fcdatas[nd])
+                framecount_record[nd].append(fcdatas[i][0])
         return framecount_record
     else:
         if dev_info["GenDCStreamingMode"]:
