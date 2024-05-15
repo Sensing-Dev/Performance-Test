@@ -14,7 +14,8 @@ import argparse
 from pathlib import Path
 
 import os
-os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
+if os.name == 'nt':
+    os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
 
 import gi
 gi.require_version("Aravis", "0.8")
@@ -57,6 +58,9 @@ def log_warning_write(msg):
 
 def log_status_write(msg):
     log_write("STATUS", msg)
+
+def get_prefix(ith_device):
+    return 'camera-' + str(ith_device) + '-'
 
 def get_device_info(parser):
     dev_info ={}
@@ -191,7 +195,7 @@ def get_bytedepth(int_pf):
         raise Exception(int_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
 
 def open_and_check(output_directory, ith_sensor):
-    f = open(os.path.join(output_directory, "sensor" + str(ith_sensor) + "-config.json"))
+    f = open(os.path.join(output_directory, get_prefix(ith_sensor) + "config.json"))
     config = json.loads(f.read())
     f.close()
     return config
@@ -221,7 +225,7 @@ def load_and_get_framecount(output_directory, num_devices):
         config = open_and_check(output_directory, ith_sensor)
         framecount_record[ith_sensor] = []
 
-        bin_files = [f for f in os.listdir(output_directory) if f.startswith("sensor"+str(ith_sensor)) and f.endswith(".bin")]
+        bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
         bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
 
         framesize = get_frame_size(config)
@@ -237,7 +241,7 @@ def load_and_get_framecount(output_directory, num_devices):
                     try:
                         # TODO return NULL for non-gendc format
                         gendc_descriptor = gendc.Container(filecontent[cursor:])
-                        image_component = gendc_descriptor.get_first_get_datatype_of(GDC_INTENSITY)
+                        image_component = gendc_descriptor.get_first_component_datatype_of(GDC_INTENSITY)
                         typespecific3 = gendc_descriptor.get("TypeSpecific", image_component, 0)[2]
                         framecount_record[ith_sensor].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
                         cursor = cursor + gendc_descriptor.get_container_size()
@@ -311,7 +315,7 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
                 framecount_record[nd].append(fcdatas[i][0])
         return framecount_record
     else:
-        prefix_params = [Param('prefix', 'sensor0-'), Param('prefix', 'sensor1-')]
+        prefix_params = [Param('prefix', get_prefix(0)), Param('prefix', get_prefix(1))]
         terminators = [Buffer(Type(TypeCode.Int, 32, 1), ()), Buffer(Type(TypeCode.Int, 32, 1), ())]
         out_nodes = []
 
@@ -330,8 +334,6 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
                         node.get_port('frame_count')[ith_device], 
                         wp, hp, ])\
                     .set_param([prefix_params[ith_device], output_directory]))
-
-        terminator = node.get_port('output')
    
         if dev_info["GenDCStreamingMode"]:
             payloadsize_p.bind(dev_info["PayloadSize"])
@@ -358,7 +360,7 @@ def write_log(output_directory, dev_info, framecount_record, last_run):
     logfile = []
     ofs = []
     for ith_device in range(dev_info["Number of Devices"]):
-        logfile.append(os.path.join(output_directory, 'camera-'+str(ith_device)+'-frame_log.txt'))
+        logfile.append(os.path.join(output_directory, get_prefix(ith_device)+'frame_log.txt'))
         ofs.append(open(logfile[ith_device], mode='w'))
         ofs[ith_device].write(str(dev_info["Width"])+'x'+str(dev_info["Height"])+'\n')
         print('\t{0}'.format(logfile[ith_device]))
@@ -400,9 +402,9 @@ def write_log(output_directory, dev_info, framecount_record, last_run):
 
     return True
 
-def delete_bin_files(output_directory):
+def delete_bin_files(output_directory, ith_sensor):
     log_status_write("Post Recording Process... Deleting bin files.")
-    bin_files = [f for f in os.listdir(output_directory) if f.startswith("raw-") and f.endswith(".bin")]
+    bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
     for i, bf in enumerate(bin_files):
         bin_file = os.path.join(output_directory, bf)
         os.remove(bin_file)
@@ -418,7 +420,8 @@ if __name__ == "__main__":
 
         ret = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
         if test_info["Delete Bin files"]:
-            delete_bin_files(ith_test_output_directory)
+            for nd in range(dev_info["Number of Devices"]):
+                delete_bin_files(ith_test_output_directory, nd)
         ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
 
     
