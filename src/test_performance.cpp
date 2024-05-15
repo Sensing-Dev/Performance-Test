@@ -420,10 +420,6 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
     }
 }
 
-// void saveData(){
-
-// }
-
 template<typename U>
 void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string output_directory_path_,
     std::map<int, std::vector<int>>& framecount_record){
@@ -469,41 +465,38 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
 
         ion::Param outpt_dir_param = ion::Param("output_directory", output_directory_path_);
         std::vector<ion::Param> prefix_params = {ion::Param("prefix", "sensor0-"), ion::Param("prefix", "sensor1-")};
+        std::vector<Halide::Buffer<int>> terminators;
+        std::vector<ion::Node> out_nodes;
+
+        for (int i = 0; i < device_info.getNumDevice(); ++i){
+            terminators.push_back(Halide::Buffer<int>::make_scalar());
+        }
 
         if (device_info.isGenDCMode()){
             int payloadsize = device_info.getPayloadSize();
-            if (device_info.getNumDevice() == 2){
-                ion::Node coy_n = b.add("image_io_binary_gendc_saver")(n["gendc"][1], n["device_info"][1], &payloadsize)
+            for (int i = 0; i < device_info.getNumDevice(); ++i){
+                out_nodes.push_back(b.add("image_io_binary_gendc_saver")(n["gendc"][i], n["device_info"][i], &payloadsize)
                 .set_param(
-                    outpt_dir_param, prefix_params[1]
-                );
-                Halide::Buffer<int> cpy_terminator = Halide::Buffer<int>::make_scalar();
-                coy_n["output"].bind(cpy_terminator);
+                    outpt_dir_param, prefix_params[i]
+                ));
             }
-            n = b.add("image_io_binary_gendc_saver")(n["gendc"][0], n["device_info"][0], &payloadsize)
-                .set_param(
-                    outpt_dir_param, prefix_params[0]
-                );
         }else{
             std::string bb_save_image = getBinarySaverBB(device_info.isGenDCMode(), device_info.getPixelFormat());
             int width = device_info.getWidth();
             int height = device_info.getHeight();
-            if (device_info.getNumDevice() == 2){
-                ion::Node coy_n = b.add(bb_save_image)(n["output"][1], n["device_info"][1], n["frame_count"][1], &width, &height)
+            for (int i = 0; i < device_info.getNumDevice(); ++i){
+                out_nodes.push_back(b.add(bb_save_image)(n["output"][i], n["device_info"][i], n["frame_count"][i], &width, &height)
                 .set_param(
-                    outpt_dir_param, prefix_params[1]
-                );
-                Halide::Buffer<int> cpy_terminator = Halide::Buffer<int>::make_scalar();
-                coy_n["output"].bind(cpy_terminator);
+                    outpt_dir_param, prefix_params[i]
+                ));
+                
             }
-            n = b.add(bb_save_image)(n["output"][0], n["device_info"][0], n["frame_count"][0], &width, &height)
-                .set_param(
-                    outpt_dir_param, prefix_params[0]
-                );
         }
-        Halide::Buffer<int> terminator = Halide::Buffer<int>::make_scalar();
-        n["output"].bind(terminator);
-
+        for (int i = 0; i < device_info.getNumDevice(); ++i){
+            out_nodes[i]["output"].bind(terminators[i]);
+        }
+        
+        
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
         }
