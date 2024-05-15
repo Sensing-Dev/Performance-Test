@@ -190,8 +190,8 @@ def get_bytedepth(int_pf):
     else:
         raise Exception(int_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
 
-def open_and_check(output_directory):
-    f = open(os.path.join(output_directory, "config.json"))
+def open_and_check(output_directory, ith_sensor):
+    f = open(os.path.join(output_directory, "sensor" + str(ith_sensor) + "-config.json"))
     config = json.loads(f.read())
     f.close()
     return config
@@ -207,49 +207,44 @@ def get_frame_size(ith_sensor_config):
     h = ith_sensor_config["height"]
     d = 2 if ith_sensor_config["pfnc_pixelformat"] == Mono10 or ith_sensor_config["pfnc_pixelformat"] == Mono12 \
         else 1
-    c = 3 if ith_sensor_config["pfnc_pixelformat"] == RGB8 or ith_sensor_config["pfnc_pixelformat"] == GR8 \
+    c = 3 if ith_sensor_config["pfnc_pixelformat"] == RGB8 or ith_sensor_config["pfnc_pixelformat"] == BGR8 \
         else 1
     return w * h * d * c
 
-def load_and_get_framecount(output_directory):
+def load_and_get_framecount(output_directory, num_devices):
 
     log_status_write("Post recording Process... Framecount data is generated.")
 
-    config = open_and_check(output_directory)
-    num_devices = config["num_device"]
-
     framecount_record = {}
-    for i in range(dev_info["Number of Devices"]):
-        framecount_record[i] = []
 
-    bin_files = [f for f in os.listdir(output_directory) if f.startswith("raw-") and f.endswith(".bin")]
-    bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
+    for ith_sensor in range(num_devices):
+        config = open_and_check(output_directory, ith_sensor)
+        framecount_record[ith_sensor] = []
 
-    framesize = []
-    for ith_device in range(num_devices):
-        framesize.append(get_frame_size(config["sensor"+str(ith_device+1)]))
+        bin_files = [f for f in os.listdir(output_directory) if f.startswith("sensor"+str(ith_sensor)) and f.endswith(".bin")]
+        bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
 
-    for bf in bin_files:
-        bin_file = os.path.join(output_directory, bf)
+        framesize = get_frame_size(config)
 
-        with open(bin_file, mode='rb') as ifs:
-            filecontent = ifs.read()   
-            cursor = 0
+        for bf in bin_files:
+            bin_file = os.path.join(output_directory, bf)
 
-            while cursor < len(filecontent):
-                for ith_device in range(num_devices):
+            with open(bin_file, mode='rb') as ifs:
+                filecontent = ifs.read()   
+                cursor = 0
+
+                while cursor < len(filecontent):
                     try:
                         # TODO return NULL for non-gendc format
                         gendc_descriptor = gendc.Container(filecontent[cursor:])
-                        gendc_descriptor = gendc.Container(filecontent[cursor:])
                         image_component = gendc_descriptor.get_first_get_datatype_of(GDC_INTENSITY)
                         typespecific3 = gendc_descriptor.get("TypeSpecific", image_component, 0)[2]
-                        framecount_record[ith_device].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
+                        framecount_record[ith_sensor].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
                         cursor = cursor + gendc_descriptor.get_container_size()
 
                     except:
-                        framecount_record[ith_device].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
-                        cursor = cursor + 4 + framesize[ith_device]
+                        framecount_record[ith_sensor].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
+                        cursor = cursor + 4 + framesize
 
     return framecount_record
 
@@ -316,19 +311,25 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
                 framecount_record[nd].append(fcdatas[i][0])
         return framecount_record
     else:
+        prefix_params = [Param('prefix', 'sensor0-'), Param('prefix', 'sensor1-')]
+        terminators = [Buffer(Type(TypeCode.Int, 32, 1), ()), Buffer(Type(TypeCode.Int, 32, 1), ())]
+        out_nodes = []
+
         if dev_info["GenDCStreamingMode"]:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('gendc'), node.get_port('device_info'), payloadsize_p, ])\
-                .set_param([num_devices, output_directory, 
-                            Param('input_gendc.size', dev_info["Number of Devices"]),
-                            Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+            for ith_device in range(dev_info["Number of Devices"]):
+                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                    .set_iport([node.get_port('gendc')[ith_device], node.get_port('device_info')[ith_device], payloadsize_p, ])\
+                    .set_param([prefix_params[ith_device], output_directory]))
+            
         else:
-            node = builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                .set_iport([node.get_port('output'), \
-                            node.get_port('device_info'), node.get_port('frame_count'), wp, hp, ])\
-                .set_param([num_devices, output_directory, \
-                        Param('input_images.size', dev_info["Number of Devices"]), \
-                        Param('input_deviceinfo.size', dev_info["Number of Devices"]) ])
+            for ith_device in range(dev_info["Number of Devices"]):
+                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                    .set_iport([
+                        node.get_port('output')[ith_device], 
+                        node.get_port('device_info')[ith_device], 
+                        node.get_port('frame_count')[ith_device], 
+                        wp, hp, ])\
+                    .set_param([prefix_params[ith_device], output_directory]))
 
         terminator = node.get_port('output')
    
@@ -339,15 +340,15 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
             hp.bind(dev_info["Height"])
 
         # output values 
-        out = Buffer(Type(TypeCode.Int, 32, 1), ())
-        terminator.bind(out)
+        for ith_device in range(dev_info["Number of Devices"]):
+            out_nodes[ith_device].get_port('output').bind(terminators[ith_device])
 
         log_status_write("Recording Process... Bin files are generated.")
 
         for x in range(test_info["Number of Frames"]):
             builder.run()
 
-        return load_and_get_framecount(output_directory_path)
+        return load_and_get_framecount(output_directory_path, dev_info["Number of Devices"])
 
 def write_log(output_directory, dev_info, framecount_record, last_run):
 
