@@ -467,11 +467,11 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
         std::vector<ion::Param> prefix_params = {ion::Param("prefix", "sensor0-"), ion::Param("prefix", "sensor1-")};
         std::vector<Halide::Buffer<int>> terminators;
         std::vector<ion::Node> out_nodes;
-
         for (int i = 0; i < device_info.getNumDevice(); ++i){
             terminators.push_back(Halide::Buffer<int>::make_scalar());
         }
 
+        // add binary saver BB
         if (device_info.isGenDCMode()){
             int payloadsize = device_info.getPayloadSize();
             for (int i = 0; i < device_info.getNumDevice(); ++i){
@@ -488,15 +488,16 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
                 out_nodes.push_back(b.add(bb_save_image)(n["output"][i], n["device_info"][i], n["frame_count"][i], &width, &height)
                 .set_param(
                     outpt_dir_param, prefix_params[i]
-                ));
-                
+                ));  
             }
         }
+
+        // bind output ports with buffers 
         for (int i = 0; i < device_info.getNumDevice(); ++i){
             out_nodes[i]["output"].bind(terminators[i]);
         }
-        
-        
+            
+        // execute the pipeline
         for (int x = 0; x < test_info.getNumFrames(); ++x){
             b.run();
         }
