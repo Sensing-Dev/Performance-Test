@@ -404,10 +404,13 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
                 while(cursor < static_cast<int>(filesize)){
                     
                     ContainerHeader gendc_descriptor= ContainerHeader(filecontent + cursor);
-                    int32_t image_component_index = gendc_descriptor.getFirstComponentIndexWithDatatypeOf(1);
-                    int offset = gendc_descriptor.getOffsetofTypeSpecific(image_component_index, 0, 3, 0);
-                    framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor + offset));
-                    cursor += gendc_descriptor.getDescriptorSize() + gendc_descriptor.getContainerDataSize();
+                    int32_t image_component_index = gendc_descriptor.getFirstComponentIndexByTypeID(1);
+                    ComponentHeader image_component = gendc_descriptor.getComponentByIndex(image_component_index);
+                    PartHeader part = image_component.getPartByIndex(0);
+                    int64_t typespecific3 = part.getTypeSpecificByIndex(2);
+                    int32_t framecount = static_cast<int32_t>(typespecific3 & 0xFFFFFFFF);
+                    framecount_record[ith_device].push_back(framecount);
+                    cursor += gendc_descriptor.getDescriptorSize() + gendc_descriptor.getDataSize();
                     
                 }
             }else{

@@ -240,11 +240,14 @@ def load_and_get_framecount(output_directory, num_devices):
                 while cursor < len(filecontent):
                     try:
                         # TODO return NULL for non-gendc format
-                        gendc_descriptor = gendc.Container(filecontent[cursor:])
-                        image_component = gendc_descriptor.get_first_component_datatype_of(GDC_INTENSITY)
-                        typespecific3 = gendc_descriptor.get("TypeSpecific", image_component, 0)[2]
-                        framecount_record[ith_sensor].append(int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little"))
-                        cursor = cursor + gendc_descriptor.get_container_size()
+                        gendc_container = gendc.Container(filecontent[cursor:])
+                        image_component_idx = gendc_container.get_1st_component_idx_by_typeid(GDC_INTENSITY)
+                        image_component = gendc_container.get_component_by_index(image_component_idx)
+                        part = image_component.get_part_by_index(0)
+                        typespecific3 = part.get_typespecific_by_index(2)
+                        frame_count = int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little")
+                        framecount_record[ith_sensor].append(frame_count)
+                        cursor = cursor + gendc_container.get_container_size()
 
                     except:
                         framecount_record[ith_sensor].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])

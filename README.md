@@ -7,8 +7,8 @@
 その後、pipで以下のモジュールをインストールしてください。
 ```bash
 pip3 install -U pip
-pip3 install ion-python
-pip3 install gendc-python==0.1.0
+pip3 install ion-python==1.8.2
+pip3 install gendc-python==0.2.6
 ```
 
 もしフレームドロップがどこで起きているかをグラフにしたい場合はmatplotlibもインストールする必要があります。
