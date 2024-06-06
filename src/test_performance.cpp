@@ -369,7 +369,8 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
 
         std::vector<std::string> bin_files;
         for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".bin") {
+            std::string prefix = "camera-" + std::to_string(ith_device);
+            if (entry.is_regular_file() && entry.path().extension() == ".bin" && !(entry.path().filename().string()).find(prefix)) {
                 bin_files.push_back(entry.path().filename().string());
             }
         }
@@ -383,7 +384,6 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
             if (!std::filesystem::exists(jth_bin)){
                 throw std::runtime_error(filename + " does not exist");
             }
-
             std::ifstream ifs(jth_bin, std::ios::binary);
             if (!ifs.is_open()){
                 throw std::runtime_error("Failed to open " + filename);
@@ -415,10 +415,8 @@ void getFrameCountFromBin(std::string output_directory, std::map<int, std::vecto
                 }
             }else{
                 while(cursor < static_cast<int>(filesize)){
-
                     framecount_record[ith_device].push_back(*reinterpret_cast<int*>(filecontent + cursor));
                     cursor += 4 + frame_size;
-
                 }
             }
             delete[] filecontent;
