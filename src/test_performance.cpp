@@ -435,10 +435,10 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
 
     // the first BB: Obtain GenDC/images
     ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat(), test_info.isRealtimeEvaluationMode()))()
-      .set_param(
+      .set_params(
         ion::Param("num_devices", device_info.getNumDevice()),
         ion::Param("frame_sync", true),
-        ion::Param("realtime_diaplay_mode", test_info.isRealtimeDisplayMode())
+        ion::Param("realtime_display_mode", test_info.isRealtimeDisplayMode())
       );
 
     // the second BB: optional
@@ -481,7 +481,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
             int payloadsize = device_info.getPayloadSize();
             for (int i = 0; i < device_info.getNumDevice(); ++i){
                 out_nodes.push_back(b.add("image_io_binary_gendc_saver")(n["gendc"][i], n["device_info"][i], &payloadsize)
-                .set_param(
+                .set_params(
                     outpt_dir_param, prefix_params[i]
                 ));
             }
@@ -491,7 +491,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
             int height = device_info.getHeight();
             for (int i = 0; i < device_info.getNumDevice(); ++i){
                 out_nodes.push_back(b.add(bb_save_image)(n["output"][i], n["device_info"][i], n["frame_count"][i], &width, &height)
-                .set_param(
+                .set_params(
                     outpt_dir_param, prefix_params[i]
                 ));  
             }
