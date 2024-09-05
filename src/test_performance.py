@@ -6,7 +6,7 @@ import ctypes
 import struct
 
 # common
-from ionpy import Node, Builder, Buffer, PortMap, Port, Param, Type, TypeCode
+from ionpy import Node, Builder, Buffer, Port, Param, Type, TypeCode
 from  gendc_python.gendc_separator import descriptor as gendc
 
 import datetime
@@ -17,9 +17,7 @@ import os
 if os.name == 'nt':
     os.add_dll_directory(os.path.join(os.environ["SENSING_DEV_ROOT"], "bin"))
 
-import gi
-gi.require_version("Aravis", "0.8")
-from gi.repository import Aravis
+from aravis import Aravis
 
 import re
 import json
@@ -274,13 +272,13 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
     frame_sync = Param('frame_sync', 'true')
-    realtime_diaplay_mode = Param('realtime_diaplay_mode', test_info["Realtime-display mode"])
+    realtime_display_mode = Param('realtime_display_mode', test_info["Realtime-display mode"])
 
     output_directory = Param("output_directory", output_directory_path)
 
     # the first BB: Obtain GenDC/images
     node = builder.add(get_bb_for_obtain_image(not eval_while_recording, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-        .set_param([num_devices, frame_sync, realtime_diaplay_mode, ])
+        .set_params([num_devices, frame_sync, realtime_display_mode, ])
     
     # the second BB: optional
     if eval_while_recording:
@@ -325,18 +323,18 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         if dev_info["GenDCStreamingMode"]:
             for ith_device in range(dev_info["Number of Devices"]):
                 out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                    .set_iport([node.get_port('gendc')[ith_device], node.get_port('device_info')[ith_device], payloadsize_p, ])\
-                    .set_param([prefix_params[ith_device], output_directory]))
+                    .set_iports([node.get_port('gendc')[ith_device], node.get_port('device_info')[ith_device], payloadsize_p, ])\
+                    .set_params([prefix_params[ith_device], output_directory]))
             
         else:
             for ith_device in range(dev_info["Number of Devices"]):
                 out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-                    .set_iport([
+                    .set_iports([
                         node.get_port('output')[ith_device], 
                         node.get_port('device_info')[ith_device], 
                         node.get_port('frame_count')[ith_device], 
                         wp, hp, ])\
-                    .set_param([prefix_params[ith_device], output_directory]))
+                    .set_params([prefix_params[ith_device], output_directory]))
    
         if dev_info["GenDCStreamingMode"]:
             payloadsize_p.bind(dev_info["PayloadSize"])
