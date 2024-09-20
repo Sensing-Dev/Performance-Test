@@ -7,6 +7,7 @@ import struct
 
 from tools.frame_check import *
 from tools.load_bin import *
+from tools.util import *
 
 # common
 from ionpy import Node, Builder, Buffer, Port, Param, Type, TypeCode
@@ -155,38 +156,6 @@ def get_bb_for_save_image(gendc, pixelformat):
     else:
         raise Exception("Currently not supported")
 
-GDC_INTENSITY   = 0x0000000000000001
-Mono8 = 0x01080001
-Mono10 = 0x01100003
-Mono12 = 0x01100005
-RGB8 = 0x02180014
-BGR8 = 0x02180015
-BayerBG8 = 0x0108000B
-BayerBG10 = 0x0110000F
-BayerBG12 = 0x01100013
-gain = 40
-exposure = 400
-
-def get_pixelformat_in_int(str_pf):
-    if str_pf == "Mono8":
-        return Mono8
-    elif str_pf == "Mono10":
-        return Mono10
-    elif str_pf == "Mono12":
-        return Mono12
-    elif str_pf == "RGB8":
-        return RGB8
-    elif str_pf == "BGR8":
-        return BGR8
-    elif str_pf == "BayerBG8":
-        return BayerBG8
-    elif str_pf == "BayerBG10":
-        return BayerBG10
-    elif str_pf == "BayerBG12":
-        return BayerBG12
-    else:
-        raise Exception(str_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
-    
 def get_bytedepth(int_pf):
     if int_pf == Mono8 or int_pf == RGB8 or int_pf == BGR8 or int_pf == BayerBG8:
         return 1
@@ -194,28 +163,6 @@ def get_bytedepth(int_pf):
         return 2
     else:
         raise Exception(int_pf + " is not supported as default in this tool.\nPlease update getPixelFormatInInt() ")
-
-def open_and_check(output_directory, ith_sensor):
-    f = open(os.path.join(output_directory, get_prefix(ith_sensor) + "config.json"))
-    config = json.loads(f.read())
-    f.close()
-    return config
-
-def open_bin_file(bin_file):
-    ifs = open(bin_file, mode='rb')
-    filecontent = ifs.read()
-    ifs.close()
-    return filecontent
-
-def get_frame_size(ith_sensor_config):   
-    w = ith_sensor_config["width"]
-    h = ith_sensor_config["height"]
-    d = 2 if ith_sensor_config["pfnc_pixelformat"] == Mono10 or ith_sensor_config["pfnc_pixelformat"] == Mono12 \
-        else 1
-    c = 3 if ith_sensor_config["pfnc_pixelformat"] == RGB8 or ith_sensor_config["pfnc_pixelformat"] == BGR8 \
-        else 1
-    return w * h * d * c
-
 
 def process_and_save(dev_info, test_info, output_directory_path, eval_while_recording):
 

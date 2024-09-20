@@ -1,13 +1,9 @@
 import json
 
-Mono8 = 0x01080001
-Mono10 = 0x01100003
-Mono12 = 0x01100005
-RGB8 = 0x02180014
-BGR8 = 0x02180015
-BayerBG8 = 0x0108000B
-BayerBG10 = 0x0110000F
-BayerBG12 = 0x01100013
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tools.util import *
 
 def get_config_info(config_file_path):
     with open(config_file_path, mode='r') as f:
