@@ -3,9 +3,7 @@ import os
 
 import re
 
-from frame_check import *
-
-CONFIG_SUFFIX = '-config.json'
+CONFIG_SUFFIX = 'config.json'
 image_ext = ['bin', 'png', 'jpg', 'jpeg', 'png', 'bmp', 'raw']
 
 class PerformanceTestItems:
@@ -36,8 +34,6 @@ class PerformanceTestItems:
         ret_configs = []
 
         if len(filtered_items_by_ext) > 0:
-            print('-{}({})'.format(self.dir_path_, ext))
-
             if ext == 'bin':
                 filtered_items_by_ext = sorted(filtered_items_by_ext, key=lambda s: int(re.search(r'-(\d+)\.bin', s).group(1)))
                 for config_file_name in self.get_config_list():

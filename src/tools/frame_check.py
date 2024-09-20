@@ -1,18 +1,31 @@
 import os
-from load_config import *
+
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from tools.load_config import *
 import struct
 from gendc_python.gendc_separator import descriptor as gendc
 from PIL import Image  
 import numpy as np
 GDC_INTENSITY   = 0x0000000000000001
 
+CONFIG_SUFFIX = 'config.json'
+
+def get_prefix(config_path):
+    config_file_name = os.path.basename(config_path)
+    return config_file_name.split(CONFIG_SUFFIX)[0]
+
 class FrameCheck:
 
-    def __init__(self, dir_path, items):
+    def __init__(self, dir_path, items, display_result=True):
         self.dir_path_ = dir_path
         self.items_ = items
+        self.display_result_ = display_result
 
     def frame_check_non_bin(self, ext, blackpixel=False):
+        if self.display_result_:
+            print('{}({})'.format(self.dir_path_, ext))
         ext_items = sorted(self.items_)
         # print(categorized_items[ext])
         expected_idx = ext_items[0]
@@ -44,15 +57,21 @@ class FrameCheck:
                 if black_ratio > 99.9:
                     num_dark['100'] += 1
 
-        self.print_stats(ext_items[0], expected_idx-1, num_catch, num_dropped_frame, num_dark, blackpixel)
+        if self.display_result_:
+            self.print_stats(ext_items[0], expected_idx-1, num_catch, num_dropped_frame, num_dark, blackpixel)
+        return ext_items
 
     def frame_check_bin_prefix(self, config_file_path, blackpixel=False):
+        if self.display_result_:
+            print('{}/{}({})'.format(self.dir_path_, get_prefix(config_file_path), 'bin'))
         w, h, d, c = get_config_info(config_file_path)
         framesize = w * h * d * c
         expected_idx = 0
         offset_idx = 0
         num_dropped_frame = 0
         num_catch = 0
+
+        ret = []
 
         for bin_idx, bf in enumerate(self.items_):
             bin_file = os.path.join(self.dir_path_, bf)
@@ -72,10 +91,12 @@ class FrameCheck:
                         typespecific3 = part.get_typespecific_by_index(2)
                         saved_idx = int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little")
                         cursor = cursor + gendc_container.get_container_size()
+                        ret.append(saved_idx)
 
                     except:
                         saved_idx = struct.unpack('I', filecontent[cursor:cursor+4])[0]
                         cursor = cursor + 4 + framesize
+                        ret.append(saved_idx)
 
                     if first_frame and bin_idx == 0:
                         expected_idx = saved_idx
@@ -86,11 +107,12 @@ class FrameCheck:
                         expected_idx += 1
                         num_dropped_frame += 1
 
-
                     expected_idx += 1
                     num_catch += 1
 
-        self.print_stats(offset_idx, expected_idx-1, num_catch, num_dropped_frame, None, blackpixel)
+        if self.display_result_:
+            self.print_stats(offset_idx, expected_idx-1, num_catch, num_dropped_frame, None, blackpixel)
+        return ret
 
     def print_stats(self, min_idx, max_idx, num_catch, num_dropped_frame, num_dark, blackpixel):
         num_total = max_idx - min_idx + 1
@@ -105,7 +127,7 @@ class FrameCheck:
             print('  black pixels > 75%   : {}'.format(num_dark['75']))
             print('  black pixels > 99.9% : {}'.format(num_dark['100']))
 
-from load_bin import *
+from tools.load_bin import *
 
 def main():
 
@@ -143,9 +165,9 @@ def main():
 
                 fc = FrameCheck(camera_dir, filtered_items)
                 if ext == 'bin':
-                    fc.frame_check_bin_prefix(os.path.join(camera_dir, configs[i]), blackpixel)
+                    _ = fc.frame_check_bin_prefix(os.path.join(camera_dir, configs[i]), blackpixel)
                 else:
-                    fc.frame_check_non_bin(ext, blackpixel)
+                    _ = fc.frame_check_non_bin(ext, blackpixel)
 
 if __name__ == "__main__":
     main()

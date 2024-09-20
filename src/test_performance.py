@@ -5,6 +5,9 @@ import ctypes
 # saving
 import struct
 
+from tools.frame_check import *
+from tools.load_bin import *
+
 # common
 from ionpy import Node, Builder, Buffer, Port, Param, Type, TypeCode
 from  gendc_python.gendc_separator import descriptor as gendc
@@ -213,46 +216,6 @@ def get_frame_size(ith_sensor_config):
         else 1
     return w * h * d * c
 
-def load_and_get_framecount(output_directory, num_devices):
-
-    log_status_write("Post recording Process... Framecount data is generated.")
-
-    framecount_record = {}
-
-    for ith_sensor in range(num_devices):
-        config = open_and_check(output_directory, ith_sensor)
-        framecount_record[ith_sensor] = []
-
-        bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
-        bin_files = sorted(bin_files, key=lambda s: int(re.search(r'\d+', s).group()))
-
-        framesize = get_frame_size(config)
-
-        for bf in bin_files:
-            bin_file = os.path.join(output_directory, bf)
-
-            with open(bin_file, mode='rb') as ifs:
-                filecontent = ifs.read()   
-                cursor = 0
-
-                while cursor < len(filecontent):
-                    try:
-                        # TODO return NULL for non-gendc format
-                        gendc_container = gendc.Container(filecontent[cursor:])
-                        image_component_idx = gendc_container.get_1st_component_idx_by_typeid(GDC_INTENSITY)
-                        image_component = gendc_container.get_component_by_index(image_component_idx)
-                        part = image_component.get_part_by_index(0)
-                        typespecific3 = part.get_typespecific_by_index(2)
-                        frame_count = int.from_bytes(typespecific3.to_bytes(8, 'little')[0:4], "little")
-                        framecount_record[ith_sensor].append(frame_count)
-                        cursor = cursor + gendc_container.get_container_size()
-
-                    except:
-                        framecount_record[ith_sensor].append(struct.unpack('I', filecontent[cursor:cursor+4])[0])
-                        cursor = cursor + 4 + framesize
-
-    return framecount_record
-
 
 def process_and_save(dev_info, test_info, output_directory_path, eval_while_recording):
 
@@ -351,7 +314,16 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         for x in range(test_info["Number of Frames"]):
             builder.run()
 
-        return load_and_get_framecount(output_directory_path, dev_info["Number of Devices"])
+        frame_counts = {}
+
+        for x in range(dev_info["Number of Devices"]):
+            pti = PerformanceTestItems(output_directory_path, get_prefix(x))
+            filtered_items_list, configs = pti.check_frame_catch_rate_of_ext('bin')
+            for i, filtered_items in enumerate(filtered_items_list):
+                fc = FrameCheck(output_directory_path, filtered_items, display_result=False)
+                frame_counts[x] = fc.frame_check_bin_prefix(os.path.join(output_directory_path, configs[i]), False)
+
+        return frame_counts
 
 def write_log(output_directory, dev_info, framecount_record, last_run):
 
