@@ -61,7 +61,7 @@ def log_warning_write(msg):
 def log_status_write(msg):
     log_write("STATUS", msg)
 
-def get_prefix(ith_device):
+def generate_prefix(ith_device):
     return 'camera-' + str(ith_device) + '-'
 
 def get_device_info(parser):
@@ -226,7 +226,7 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
                 framecount_record[nd].append(fcdatas[i][0])
         return framecount_record
     else:
-        prefix_params = [Param('prefix', get_prefix(0)), Param('prefix', get_prefix(1))]
+        prefix_params = [Param('prefix', generate_prefix(0)), Param('prefix', generate_prefix(1))]
         terminators = [Buffer(Type(TypeCode.Int, 32, 1), ()), Buffer(Type(TypeCode.Int, 32, 1), ())]
         out_nodes = []
 
@@ -263,59 +263,10 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
 
         return framecount_record
 
-def write_log(output_directory, dev_info, framecount_record, last_run):
-
-    
-
-    print('log written in ')
-    logfile = []
-    ofs = []
-    for ith_device in range(dev_info["Number of Devices"]):
-        logfile.append(os.path.join(output_directory, get_prefix(ith_device)+'frame_log.txt'))
-        ofs.append(open(logfile[ith_device], mode='w'))
-        ofs[ith_device].write(str(dev_info["Width"])+'x'+str(dev_info["Height"])+'\n')
-        print('\t{0}'.format(logfile[ith_device]))
-
-        num_dropped_frames = 0
-
-        current_frame = 0
-        offset_frame_count = 0
-        
-
-        for i, fc in enumerate(framecount_record[ith_device]):
-            if i == 0:
-                if ctypes.c_long(fc & 0xFFFFFFFF).value  == -1:
-                    raise Exception("This U3V Camera does not support Frame count.")
-                offset_frame_count = fc
-                expected_frame_count = offset_frame_count
-                ofs[ith_device].write('offset_frame_count: ' + str(expected_frame_count) +'\n')
-
-            if last_run and i == len(framecount_record[ith_device]) - 1:
-                pass
-            else:
-                frame_drop = fc != expected_frame_count
-
-                if frame_drop:
-                    while expected_frame_count < fc : 
-                        ofs[ith_device].write(str(expected_frame_count) + ' : x\n')
-                        num_dropped_frames += 1
-                        expected_frame_count += 1
-
-                frame_drop = False
-                ofs[ith_device].write(str(expected_frame_count) + ' : ' + str(fc) +'\n')
-                expected_frame_count += 1
-
-            if current_frame < fc:
-                current_frame = fc
-        total_num_frame = current_frame - offset_frame_count  + 1
-        print("\t", (total_num_frame-num_dropped_frames) * 1.0 / total_num_frame)
-
-
-    return True
 
 def delete_bin_files(output_directory, ith_sensor):
     log_status_write("Post Recording Process... Deleting bin files.")
-    bin_files = [f for f in os.listdir(output_directory) if f.startswith(get_prefix(ith_sensor)) and f.endswith(".bin")]
+    bin_files = [f for f in os.listdir(output_directory) if f.startswith(generate_prefix(ith_sensor)) and f.endswith(".bin")]
     for i, bf in enumerate(bin_files):
         bin_file = os.path.join(output_directory, bf)
         os.remove(bin_file)
@@ -332,11 +283,12 @@ if __name__ == "__main__":
         frame_counts = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
 
         if len(frame_counts) == 0:
+            log_status_write("Post Recording Process... check frameskip.")
             for x in range(dev_info["Number of Devices"]):
-                pti = PerformanceTestItems(ith_test_output_directory, get_prefix(x))
+                pti = PerformanceTestItems(ith_test_output_directory, generate_prefix(x))
                 filtered_items_list, configs = pti.check_frame_catch_rate_of_ext('bin')
                 for i, filtered_items in enumerate(filtered_items_list):
-                    fc = FrameCheck(ith_test_output_directory, filtered_items, display_result=False)
+                    fc = FrameCheck(ith_test_output_directory, filtered_items, display_result=True)
                     frame_counts[x] = fc.frame_check_bin_prefix(os.path.join(ith_test_output_directory, configs[i]), False)
 
         if test_info["Delete Bin files"]:
@@ -344,6 +296,7 @@ if __name__ == "__main__":
                 delete_bin_files(ith_test_output_directory, nd)
         log_status_write("Post Recording Process... A log for frameskip will be generated.")
         
-        ret = write_log(ith_test_output_directory, dev_info, frame_counts, i == test_info["Number of Tests"] - 1)
+        for nd in  frame_counts:
+            ret = write_log(dev_info["Width"], dev_info["Height"], generate_prefix(nd), frame_counts[nd],  ith_test_output_directory)
 
     

@@ -14,9 +14,34 @@ import ctypes
 
 CONFIG_SUFFIX = 'config.json'
 
-def get_prefix(config_path):
-    config_file_name = os.path.basename(config_path)
-    return config_file_name.split(CONFIG_SUFFIX)[0]
+
+
+def write_log(w, h, prefix, framecount, output_directory):
+    logfile_path = os.path.join(output_directory, prefix + 'frame_log.txt')
+    print('log written in {}'.format(logfile_path))
+    with open(logfile_path, mode='w') as ofs:
+        ofs.write('{}x{}\n'.format(w, h))
+        offset_frame_count = 0
+        expected_frame_count = 0
+        frame_drip = False
+
+        for i, fc in enumerate(framecount):
+            if i == 0:
+                if ctypes.c_long(fc & 0xFFFFFFFF).value  == -1:
+                    raise Exception("This U3V Camera does not support Frame count.")
+                offset_frame_count = fc
+                expected_frame_count = offset_frame_count
+                ofs.write('offset_frame_count: {}\n'.format(expected_frame_count))
+
+            frame_drop = fc != expected_frame_count
+
+            if frame_drop:
+                while expected_frame_count < fc:
+                    ofs.write('{} : x\n'.format(expected_frame_count))
+                    expected_frame_count += 1
+            frame_drop = False
+            ofs.write('{} : {}\n'.format(expected_frame_count, fc))
+            expected_frame_count += 1
 
 class FrameCheck:
 
@@ -129,38 +154,7 @@ class FrameCheck:
             print('  black pixels > 75%   : {}'.format(num_dark['75']))
             print('  black pixels > 99.9% : {}'.format(num_dark['100']))
             
-    def write_log(self, config_file_path, framecount, output_directory=None):
-
-        if not output_directory:
-            output_directory = self.dir_path_
-        
-        w, h, d, c = get_config_info(config_file_path)
-        prefix = get_prefix(config_file_path)
-        logfile_path = os.path.join(output_directory, prefix + 'frame_log.txt')
-        print('log written in {}'.format(logfile_path))
-        with open(logfile_path, mode='w') as ofs:
-            ofs.write('{}x{}\n'.format(w, h))
-            offset_frame_count = 0
-            expected_frame_count = 0
-            frame_drip = False
-
-            for i, fc in enumerate(framecount):
-                if i == 0:
-                    if ctypes.c_long(fc & 0xFFFFFFFF).value  == -1:
-                        raise Exception("This U3V Camera does not support Frame count.")
-                    offset_frame_count = fc
-                    expected_frame_count = offset_frame_count
-                    ofs.write('offset_frame_count: {}\n'.format(expected_frame_count))
-
-                frame_drop = fc != expected_frame_count
-
-                if frame_drop:
-                    while expected_frame_count < fc:
-                        ofs.write('{} : x\n'.format(expected_frame_count))
-                        expected_frame_count += 1
-                frame_drop = False
-                ofs.write('{} : {}\n'.format(expected_frame_count, fc))
-                expected_frame_count += 1
+   
                     
 from tools.load_bin import *
 
@@ -200,8 +194,11 @@ def main():
 
                 fc = FrameCheck(camera_dir, filtered_items)
                 if ext == 'bin':
+                    w, h, d, c = get_config_info(os.path.join(camera_dir, configs[i]))
+                    
                     framecount = fc.frame_check_bin_prefix(os.path.join(camera_dir, configs[i]), blackpixel)
-                    fc.write_log(os.path.join(camera_dir, configs[i]), framecount)
+                    w, h, d, c = get_config_info(os.path.join(camera_dir, configs[i]))
+                    write_log(w, h, get_prefix(configs[i]), framecount, camera_dir)
                 else:
                     _ = fc.frame_check_non_bin(ext, blackpixel)
 
