@@ -134,9 +134,9 @@ def get_bb_for_obtain_image(save_as_bin, gendc, pixelformat):
         if gendc:
             return 'image_io_u3v_gendc'
 
-    if pixelformat == "Mono8":
+    if pixelformat == "Mono8" or pixelformat == "BayerBG8":
         return "image_io_u3v_cameraN_u8x2"
-    elif pixelformat == "Mono10" or pixelformat == "Mono12":
+    elif pixelformat == "Mono10" or pixelformat == "Mono12" or pixelformat == "BayerBG10" or pixelformat == "BayerBG12":
         return "image_io_u3v_cameraN_u16x2"
     elif pixelformat == "RGB8" or pixelformat == "BGR8":
         return "image_io_u3v_cameraN_u8x3"
@@ -167,6 +167,7 @@ def get_bytedepth(int_pf):
 def process_and_save(dev_info, test_info, output_directory_path, eval_while_recording):
 
     # sys.exit(1)
+    framecount_record = {}
 
     builder = Builder()
     builder.set_target('host')
@@ -213,7 +214,6 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         output_p.bind(outputs)
         frame_count_p.bind(frame_counts)
 
-        framecount_record = {}
         for i in range(dev_info["Number of Devices"]):
             framecount_record[i] = []
 
@@ -261,20 +261,11 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
         for x in range(test_info["Number of Frames"]):
             builder.run()
 
-        frame_counts = {}
-
-        for x in range(dev_info["Number of Devices"]):
-            pti = PerformanceTestItems(output_directory_path, get_prefix(x))
-            filtered_items_list, configs = pti.check_frame_catch_rate_of_ext('bin')
-            for i, filtered_items in enumerate(filtered_items_list):
-                fc = FrameCheck(output_directory_path, filtered_items, display_result=False)
-                frame_counts[x] = fc.frame_check_bin_prefix(os.path.join(output_directory_path, configs[i]), False)
-
-        return frame_counts
+        return framecount_record
 
 def write_log(output_directory, dev_info, framecount_record, last_run):
 
-    log_status_write("Post Recording Process... A log for frameskip will be generated.")
+    
 
     print('log written in ')
     logfile = []
@@ -338,10 +329,21 @@ if __name__ == "__main__":
         ith_test_output_directory = os.path.join(test_info["Output Directory"], str(i))
         os.mkdir(ith_test_output_directory)
 
-        ret = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
+        frame_counts = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
+
+        if len(frame_counts) == 0:
+            for x in range(dev_info["Number of Devices"]):
+                pti = PerformanceTestItems(ith_test_output_directory, get_prefix(x))
+                filtered_items_list, configs = pti.check_frame_catch_rate_of_ext('bin')
+                for i, filtered_items in enumerate(filtered_items_list):
+                    fc = FrameCheck(ith_test_output_directory, filtered_items, display_result=False)
+                    frame_counts[x] = fc.frame_check_bin_prefix(os.path.join(ith_test_output_directory, configs[i]), False)
+
         if test_info["Delete Bin files"]:
             for nd in range(dev_info["Number of Devices"]):
                 delete_bin_files(ith_test_output_directory, nd)
-        ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
+        log_status_write("Post Recording Process... A log for frameskip will be generated.")
+        
+        ret = write_log(ith_test_output_directory, dev_info, frame_counts, i == test_info["Number of Tests"] - 1)
 
     
