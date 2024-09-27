@@ -130,9 +130,13 @@ class FrameCheck:
                         offset_idx = saved_idx
                         first_frame = False
 
-                    while expected_idx != saved_idx:
+                    while expected_idx < saved_idx:
                         expected_idx += 1
                         num_dropped_frame += 1
+
+                    while expected_idx > saved_idx:
+                        print('Invalid framecount is detected. cancel this run')
+                        return ret
 
                     expected_idx += 1
                     num_catch += 1

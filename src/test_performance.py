@@ -117,7 +117,7 @@ def get_device_info(parser):
     dev_info["Height"] = device.get_integer_feature_value("Height")
     dev_info["PayloadSize"] = device.get_integer_feature_value("PayloadSize")
     dev_info["PixelFormat"] = device.get_string_feature_value("PixelFormat")
-        
+
     del device
     Aravis.shutdown()
 
@@ -182,13 +182,15 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
 
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
-    frame_sync = Param('frame_sync', 'true')
+    frame_sync = Param('frame_sync', False)
     realtime_display_mode = Param('realtime_display_mode', test_info["Realtime-display mode"])
 
     output_directory = Param("output_directory", output_directory_path)
 
     # the first BB: Obtain GenDC/images
-    node = builder.add(get_bb_for_obtain_image(not eval_while_recording, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+    acquisition_BB = get_bb_for_obtain_image(not eval_while_recording, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"])
+    log_status_write("Acquisition BB: {}".format(acquisition_BB))
+    node = builder.add(acquisition_BB)\
         .set_params([num_devices, frame_sync, realtime_display_mode, ])
     
     # the second BB: optional
@@ -232,13 +234,17 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
 
         if dev_info["GenDCStreamingMode"]:
             for ith_device in range(dev_info["Number of Devices"]):
-                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                saving_BB = get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"])
+                log_status_write("Saving BB: {}".format(saving_BB))
+                out_nodes.append(builder.add(saving_BB)\
                     .set_iports([node.get_port('gendc')[ith_device], node.get_port('device_info')[ith_device], payloadsize_p, ])\
                     .set_params([prefix_params[ith_device], output_directory]))
             
         else:
             for ith_device in range(dev_info["Number of Devices"]):
-                out_nodes.append(builder.add(get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
+                saving_BB = get_bb_for_save_image(dev_info["GenDCStreamingMode"], dev_info["PixelFormat"])
+                log_status_write("Saving BB: {}".format(saving_BB))
+                out_nodes.append(builder.add(saving_BB)\
                     .set_iports([
                         node.get_port('output')[ith_device], 
                         node.get_port('device_info')[ith_device], 
@@ -289,22 +295,13 @@ if __name__ == "__main__":
 
         frame_counts = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
 
-        # if len(frame_counts) == 0:
-        #     log_status_write("Post Recording Process... check frameskip.")
-        #     for x in range(dev_info["Number of Devices"]):
-        #         pti = PerformanceTestItems(ith_test_output_directory, generate_prefix(x))
-        #         filtered_items_list, configs = pti.check_frame_catch_rate_of_ext('bin')
-        #         for i, filtered_items in enumerate(filtered_items_list):
-        #             fc = FrameCheck(ith_test_output_directory, filtered_items, display_result=True)
-        #             frame_counts[x] = fc.frame_check_bin_prefix(os.path.join(ith_test_output_directory, configs[i]), False)
-
         if test_info["Delete Bin files"]:
             for nd in range(dev_info["Number of Devices"]):
                 delete_bin_files(ith_test_output_directory, nd)
         log_status_write("Post Recording Process... A log for frameskip will be generated.")
         
         for nd in  frame_counts:
-            print(generate_prefix(nd))
             ret = write_log(dev_info["Width"], dev_info["Height"], generate_prefix(nd), frame_counts[nd],  ith_test_output_directory)
+
 
     
