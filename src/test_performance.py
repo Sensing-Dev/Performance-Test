@@ -13,7 +13,7 @@ from tools.util import *
 from ionpy import Node, Builder, Buffer, Port, Param, Type, TypeCode
 from  gendc_python.gendc_separator import descriptor as gendc
 
-import datetime
+import datetime,time
 import argparse
 from pathlib import Path
 
@@ -290,6 +290,8 @@ if __name__ == "__main__":
     dev_info, test_info = get_device_info(parser)
 
     for i in range(test_info["Number of Tests"]):
+        start = time.time()
+
         ith_test_output_directory = os.path.join(test_info["Output Directory"], str(i))
         os.mkdir(ith_test_output_directory)
 
@@ -303,5 +305,6 @@ if __name__ == "__main__":
         for nd in  frame_counts:
             ret = write_log(dev_info["Width"], dev_info["Height"], generate_prefix(nd), frame_counts[nd],  ith_test_output_directory)
 
-
+        end = time.time()
+        print(f"test-{i} time in total:", end - start)
     
