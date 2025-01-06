@@ -418,19 +418,20 @@ if __name__ == "__main__":
     dev_info, test_info = get_device_info(parser)
 
     for i in range(test_info["Number of Tests"]):
-
+        start = time.time()
 
         ith_test_output_directory = os.path.join(test_info["Output Directory"], str(i))
         os.mkdir(ith_test_output_directory)
 
-        start = time.time()
         ret = process_and_save(dev_info, test_info, ith_test_output_directory, test_info["Realtime-evaluation mode"])
-        end = time.time()
-        print(f"test-{i} time in total:", end - start)
 
         if test_info["Delete Bin files"]:
             for nd in range(dev_info["Number of Devices"]):
                 delete_bin_files(ith_test_output_directory, nd)
         ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
+
+        end = time.time()
+        print(f"test-{i} time in total:", end - start)
+
 
     
