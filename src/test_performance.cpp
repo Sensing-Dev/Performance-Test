@@ -21,6 +21,7 @@ g++ src/test_performance.cpp -o test_performance \
 #include <map>
 #include <algorithm>
 #include <regex>
+#include <chrono>
 
 #include <filesystem>
 #include <iomanip>
@@ -435,7 +436,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
 
     // the first BB: Obtain GenDC/images
     ion::Node n = b.add(getImageAcquisitionBB(device_info.isGenDCMode(), device_info.getPixelFormat(), test_info.isRealtimeEvaluationMode()))()
-      .set_params(
+      .set_param(
         ion::Param("num_devices", device_info.getNumDevice()),
         ion::Param("frame_sync", true),
         ion::Param("realtime_display_mode", test_info.isRealtimeDisplayMode())
@@ -481,7 +482,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
             int payloadsize = device_info.getPayloadSize();
             for (int i = 0; i < device_info.getNumDevice(); ++i){
                 out_nodes.push_back(b.add("image_io_binary_gendc_saver")(n["gendc"][i], n["device_info"][i], &payloadsize)
-                .set_params(
+                .set_param(
                     outpt_dir_param, prefix_params[i]
                 ));
             }
@@ -491,7 +492,7 @@ void process_and_save(DeviceInfo& device_info, TestInfo& test_info, std::string 
             int height = device_info.getHeight();
             for (int i = 0; i < device_info.getNumDevice(); ++i){
                 out_nodes.push_back(b.add(bb_save_image)(n["output"][i], n["device_info"][i], n["frame_count"][i], &width, &height)
-                .set_params(
+                .set_param(
                     outpt_dir_param, prefix_params[i]
                 ));  
             }
@@ -625,6 +626,7 @@ int main(int argc, char *argv[])
     );
 
     for (int i = 0; i < num_test.getValue(); ++i){
+        auto start = std::chrono::high_resolution_clock::now();
         std::filesystem::path ith_test_output_directory = saving_path / std::filesystem::path(std::to_string(i));
         std::filesystem::create_directory(ith_test_output_directory);
 
@@ -652,6 +654,11 @@ int main(int argc, char *argv[])
                 
             }
         }
+
+
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end -start;
+        logInfo("test-" + std::to_string(i) +  " time in total(s):" + std::to_string(duration.count()));
         
     }
 
