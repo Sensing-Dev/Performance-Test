@@ -274,13 +274,13 @@ def process_and_save(dev_info, test_info, output_directory_path, eval_while_reco
     # Params
     num_devices = Param('num_devices', str(dev_info["Number of Devices"]))
     frame_sync = Param('frame_sync', 'true')
-    realtime_diaplay_mode = Param('realtime_diaplay_mode', test_info["Realtime-display mode"])
+    realtime_display_mode = Param('realtime_display_mode', test_info["Realtime-display mode"])
 
     output_directory = Param("output_directory", output_directory_path)
 
     # the first BB: Obtain GenDC/images
     node = builder.add(get_bb_for_obtain_image(not eval_while_recording, dev_info["GenDCStreamingMode"], dev_info["PixelFormat"]))\
-        .set_param([num_devices, frame_sync, realtime_diaplay_mode, ])
+        .set_param([num_devices, frame_sync, realtime_display_mode, ])
     
     # the second BB: optional
     if eval_while_recording:
