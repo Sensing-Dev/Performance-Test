@@ -2,13 +2,16 @@
 
 ## Windows
 
-[こちら](https://sensing-dev.github.io/doc/startup-guide/windows/index.html)よりSDKをインストールしてください。
+[こちら](https://sensing-dev.github.io/doc/next/startup-guide/windows)よりSDKをインストールしてください。
+
+sensing-dev バージョン v24.12.00 を使用してください。
 
 その後、pipで以下のモジュールをインストールしてください。
 ```bash
 pip3 install -U pip
-pip3 install ion-python==1.8.2
-pip3 install gendc-python==0.2.6
+pip3 uninstal ion-python
+pip3 install ion-contrib-python==3.2.6
+pip3 install gendc-python==0.3.5
 ```
 
 もしフレームドロップがどこで起きているかをグラフにしたい場合はmatplotlibもインストールする必要があります。
@@ -19,7 +22,7 @@ pip3 install matplotlib
 ### How to use
 以下のpythonプログラムを実行してください。
 ```
-python test_performance.py
+python3 test_performance.py
 ```
 
 各引数は以下をご確認ください。
@@ -78,3 +81,16 @@ image is saved under <output directory>\U3V-performance-test-YYYY-MM-DD-HH-mm-SS
 ```
 
 ![stats](./stat.png)
+
+
+## Linux
+[こちら](https://sensing-dev.github.io/doc/next/startup-guide/linux)よりSDKをインストールしてください。
+
+sensing-dev バージョン v24.12.00 を使用してください。
+
+### How to use
+
+以下のpythonプログラムを実行してください。
+```python
+python3 test_performance.py
+```

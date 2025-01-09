@@ -21,6 +21,7 @@ g++ src/test_performance.cpp -o test_performance \
 #include <map>
 #include <algorithm>
 #include <regex>
+#include <chrono>
 
 #include <filesystem>
 #include <iomanip>
@@ -625,6 +626,8 @@ int main(int argc, char *argv[])
     );
 
     for (int i = 0; i < num_test.getValue(); ++i){
+        auto start = std::chrono::high_resolution_clock::now();
+
         std::filesystem::path ith_test_output_directory = saving_path / std::filesystem::path(std::to_string(i));
         std::filesystem::create_directory(ith_test_output_directory);
 
@@ -641,7 +644,7 @@ int main(int argc, char *argv[])
         writeLog(ith_test_output_directory.u8string(), device_info, framecount_record);
 
         if (delete_bin.getValue()){
-            logStatus("Post Recording Process... Deleting bin files.");        
+            logStatus("Post Recording Process... Deleting bin files.");
             for (int d = 0; d < device_info.getNumDevice(); ++d){
                 std::string file_prefix = getPrefix(d);
                 for (const auto& entry : std::filesystem::directory_iterator(ith_test_output_directory)) {
@@ -652,7 +655,11 @@ int main(int argc, char *argv[])
                 
             }
         }
-        
+
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end -start;
+        logInfo("test-" + std::to_string(i) +  " time in total(s) for " + std::to_string(num_frame.getValue()) + " frames:" + std::to_string(duration.count()));
+
     }
 
     
