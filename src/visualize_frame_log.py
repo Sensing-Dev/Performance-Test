@@ -77,12 +77,11 @@ def main():
     parser = argparse.ArgumentParser(description="Performance test for your U3V Camera")
     parser.add_argument('-d', '--directory', type=str, \
                         help='Directory to save log', required=True)
+    parser.add_argument('-nd', '--number-of-device', default=1, type=int, \
+                        help='The number of devices')
     args = parser.parse_args()
 
-    num_devices = 0
-    with open(os.path.join(args.directory, '0' ,"config.json")) as f:
-        config = json.loads(f.read())
-        num_devices = config["num_device"]
+    num_devices = args.number_of_device
 
     for n in range(num_devices):
         num_runs, percent = get_stats(args.directory, n, True)
