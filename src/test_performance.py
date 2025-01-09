@@ -306,5 +306,5 @@ if __name__ == "__main__":
             ret = write_log(dev_info["Width"], dev_info["Height"], generate_prefix(nd), frame_counts[nd],  ith_test_output_directory)
 
         end = time.time()
-        print(f"test-{i} time in total(s):", end - start)
+        print(f"test-{i} time in total(s) for {test_info['Number of Frames']} frames:", end - start)
     
