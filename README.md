@@ -11,7 +11,7 @@ sensing-dev バージョン v24.12.00 を使用してください。
 pip3 install -U pip
 pip3 uninstal ion-python
 pip3 install ion-contrib-python==3.2.6
-pip3 install gendc-python==0.3.5
+pip3 install gendc-python==0.4.0
 ```
 
 もしフレームドロップがどこで起きているかをグラフにしたい場合はmatplotlibもインストールする必要があります。
