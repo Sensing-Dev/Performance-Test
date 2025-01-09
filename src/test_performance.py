@@ -431,7 +431,7 @@ if __name__ == "__main__":
         ret = write_log(ith_test_output_directory, dev_info, ret, i == test_info["Number of Tests"] - 1)
 
         end = time.time()
-        print(f"test-{i} time in total:", end - start)
+        print(f"test-{i} time in total(s) for {test_info['Number of Frames']} frames:", end - start)
 
 
     

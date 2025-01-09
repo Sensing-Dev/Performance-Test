@@ -658,7 +658,7 @@ int main(int argc, char *argv[])
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = end -start;
-        logInfo("test-" + std::to_string(i) +  " time in total(s):" + std::to_string(duration.count()));
+        logInfo("test-" + std::to_string(i) +  " time in total(s) for " + std::to_string(num_frame.getValue()) + " frames:" + std::to_string(duration.count()));
         
     }
 
