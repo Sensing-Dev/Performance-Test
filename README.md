@@ -4,7 +4,7 @@
 
 [こちら](https://sensing-dev.github.io/doc/next/startup-guide/windows)よりSDKをインストールしてください。
 
-sensing-dev バージョン v24.12.00 を使用してください。
+sensing-dev バージョン v25.01.00 を使用してください。
 
 その後、pipで以下のモジュールをインストールしてください。
 ```bash
@@ -86,7 +86,7 @@ image is saved under <output directory>\U3V-performance-test-YYYY-MM-DD-HH-mm-SS
 ## Linux
 [こちら](https://sensing-dev.github.io/doc/next/startup-guide/linux)よりSDKをインストールしてください。
 
-sensing-dev バージョン v24.12.00 を使用してください。
+sensing-dev バージョン v25.01.00 を使用してください。
 
 ### How to use
 
