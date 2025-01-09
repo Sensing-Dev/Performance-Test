@@ -30,20 +30,19 @@ g++ src/test_performance.cpp -o test_performance \
 #include <ion/ion.h>
 #include <fstream>
 #include <json/json.hpp>
-#include "gendc_separator/ContainerHeader.h"
-#include "gendc_separator/tools.h"
+#include "gendc_common.h"
+using namespace gendc;
 
 #define LOG_DISPLAY true
 
-// The other PixelFormat values are https://www.emva.org/wp-content/uploads/GenICamPixelFormatValues.pdf
-#define Mono8 0x01080001
-#define Mono10 0x01100003
-#define Mono12 0x01100005
-#define RGB8 0x02180014
-#define BGR8 0x02180015
-#define BayerBG8 0x0108000B
-#define BayerBG10 0x0110000F
-#define BayerBG12 0x01100013
+int32_t Mono8 = pfnc::convert_pixelformat("Mono8");
+int32_t Mono10 = pfnc::convert_pixelformat("Mono10");
+int32_t Mono12 = pfnc::convert_pixelformat("Mono12");
+int32_t RGB8 = pfnc::convert_pixelformat("RGB8");
+int32_t BGR8 = pfnc::convert_pixelformat("BGR8");
+int32_t BayerBG8 = pfnc::convert_pixelformat("BayerBG8");
+int32_t BayerBG10 = pfnc::convert_pixelformat("BayerBG10");
+int32_t BayerBG12 = pfnc::convert_pixelformat("BayerBG12");
 
 std::string getPrefix(int ith_device){
     return "camera-" + std::to_string(ith_device) + "-";
